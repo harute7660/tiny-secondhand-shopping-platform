@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}문제 신고 · TINY MARKET{% endblock %}
+{% block body_class %}report-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-report">
+  <div class="shell page-hero-row">
+    <div>
+      <span class="eyebrow eyebrow-light">REPORT A PROBLEM</span>
+      <h1>문제를 알려주세요.</h1>
+      <p>거래금지 상품, 사기 의심, 불쾌한 대화 등 안전을 해치는 상황을 검토합니다.</p>
+    </div>
+    <span class="report-hero-mark" aria-hidden="true">!</span>
+  </div>
+</section>
+
+<section class="shell report-layout">
+  <div class="form-card form-card-wide">
+    <div class="form-card-heading"><span class="step-badge step-badge-danger">!</span><div><h2>신고 내용</h2><p>확인 가능한 사실을 중심으로 작성해 주세요.</p></div></div>
+
+    {% if target.title %}
+      <div class="report-target">
+        <span>신고할 상품</span>
+        <div>
+          <span class="report-target-thumb">{% if target.image %}<img src="{% url 'market:listing_image' target.pk %}" alt="">{% else %}<i aria-hidden="true">TM</i>{% endif %}</span>
+          <p><strong>{{ target.title }}</strong><small>판매자 {{ target.seller.username }} · {{ target.price_points }} 포인트</small></p>
+        </div>
+      </div>
+    {% elif target.username %}
+      <div class="report-target"><span>신고할 사용자</span><div><span class="seller-avatar" aria-hidden="true">{{ target.username|first|upper }}</span><p><strong>{{ target.username }}</strong><small>사용자 신고</small></p></div></div>
+    {% endif %}
+
+    {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+    <form method="post" class="stack-form" novalidate>
+      {% csrf_token %}
+      {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+      {% for field in form.visible_fields %}
+        <div class="field-group{% if field.errors %} field-error{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required-mark" aria-label="필수">*</span>{% endif %}</label>
+          {{ field }}
+          {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="report-consent"><span aria-hidden="true">✓</span><p>신고 내용은 운영 검토와 이용자 보호를 위해 사용됩니다. 고의적인 허위 신고는 이용 제한 사유가 될 수 있습니다.</p></div>
+      <div class="form-actions"><a class="button button-quiet" href="{% if target_conversation %}{% url 'market:conversation_detail' target_conversation.pk %}{% else %}{% url 'market:home' %}{% endif %}">취소</a><button class="button button-danger" type="submit">신고 접수하기</button></div>
+    </form>
+  </div>
+
+  <aside class="report-aside">
+    <div class="tip-card tip-card-apricot"><span class="tip-number" aria-hidden="true">?</span><h2>이런 경우 신고해요</h2><ul class="simple-list"><li>실제 상태와 다른 상품 정보</li><li>외부 결제 또는 개인정보 요구</li><li>거래금지·위해 상품</li><li>욕설, 위협, 반복적인 괴롭힘</li></ul></div>
+    <div class="tip-card"><h2>긴급한 피해가 있나요?</h2><p>금전 피해나 범죄가 의심되면 플랫폼 신고와 별도로 경찰청 사이버범죄 신고시스템 등 관계기관에 도움을 요청하세요.</p></div>
+  </aside>
+</section>
+{% endblock %}

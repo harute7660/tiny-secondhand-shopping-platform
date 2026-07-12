@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}회원가입 · TINY MARKET{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<section class="auth-shell shell">
+  <div class="auth-story auth-story-apricot" aria-labelledby="signup-story-title">
+    <span class="eyebrow eyebrow-light">A SMALL BEGINNING</span>
+    <h1 id="signup-story-title">좋은 거래의 첫 장면.</h1>
+    <p>쓰지 않는 물건에는 새 주인을, 필요한 사람에게는 기분 좋은 발견을 연결해요.</p>
+    <div class="story-orbit" aria-hidden="true">
+      <span class="orbit-card orbit-one">책</span>
+      <span class="orbit-card orbit-two">조명</span>
+      <span class="orbit-card orbit-three">가방</span>
+    </div>
+  </div>
+
+  <div class="auth-card">
+    <div class="auth-heading">
+      <span class="mini-mark" aria-hidden="true"></span>
+      <p class="eyebrow">JOIN TINY MARKET</p>
+      <h2>회원가입</h2>
+      <p>거래에 사용할 계정을 만들어 주세요.</p>
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" class="stack-form" novalidate>
+      {% csrf_token %}
+      {% for field in form %}
+        <div class="field-group{% if field.errors %} field-error{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="privacy-note">
+        <span aria-hidden="true">i</span>
+        <p>비밀번호는 단방향 해시로 저장되며 운영자도 원문을 볼 수 없습니다.</p>
+      </div>
+      <button class="button button-primary button-full" type="submit">계정 만들기</button>
+    </form>
+
+    <p class="auth-switch">이미 계정이 있나요? <a href="{% url 'accounts:login' %}">로그인</a></p>
+  </div>
+</section>
+{% endblock %}

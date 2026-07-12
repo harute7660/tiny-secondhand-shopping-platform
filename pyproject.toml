@@ -1,0 +1,15 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [".venv", "var", "tmp", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "DJ"]
+ignore = ["DJ001"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests.py" = ["S105", "S106"]
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests", "migrations", "tmp"]
+skips = ["B101"]

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}TINY MARKET · 작지만 믿음직한 거래{% endblock %}
+{% block body_class %}home-page{% endblock %}
+
+{% block content %}
+<section class="hero-section">
+  <div class="shell hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow eyebrow-light"><span class="live-dot" aria-hidden="true"></span> SMALL THINGS, GOOD STORIES</span>
+      <h1>작은 물건의<br><em>다음 장면</em>을 찾아요.</h1>
+      <p>상태는 솔직하게, 거래 과정은 또렷하게.<br>우리에게 꼭 필요한 만큼만 담은 따뜻한 중고마켓입니다.</p>
+      <form class="hero-search" method="get" action="{% url 'market:home' %}" role="search">
+        <label class="sr-only" for="hero-query">상품 검색</label>
+        <span class="search-icon" aria-hidden="true"></span>
+        <input id="hero-query" name="q" type="search" value="{{ query }}" placeholder="어떤 물건을 찾고 있나요?" maxlength="100">
+        <button type="submit">찾아보기</button>
+      </form>
+      <div class="hero-links" aria-label="빠른 메뉴">
+        {% if user.is_authenticated %}
+          <a class="button button-apricot" href="{% url 'market:listing_create' %}">내 물건의 다음 주인 찾기</a>
+        {% else %}
+          <a class="button button-apricot" href="{% url 'accounts:signup' %}">가볍게 시작하기</a>
+        {% endif %}
+        <a class="text-link text-link-light" href="{% url 'market:safety' %}">안전 거래 원칙 보기 <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+
+    <div class="hero-scene" aria-hidden="true">
+      <div class="scene-sun"></div>
+      <div class="scene-card scene-card-main">
+        <div class="scene-image"><span>작은 발견</span></div>
+        <div class="scene-lines"><i></i><i></i></div>
+        <strong>잘 쓰던 물건, 잘 이어주기</strong>
+      </div>
+      <div class="scene-card scene-card-note">
+        <span class="scene-check">✓</span>
+        <p><strong>상태 확인</strong><small>하자까지 투명하게</small></p>
+      </div>
+      <div class="scene-tag scene-tag-one"># 오래쓸물건</div>
+      <div class="scene-tag scene-tag-two"># 좋은거래</div>
+      <div class="scene-dots"></div>
+    </div>
+  </div>
+</section>
+
+<section class="confidence-strip" aria-label="TINY MARKET의 거래 원칙">
+  <div class="shell confidence-grid">
+    <div><span class="confidence-icon shield-icon" aria-hidden="true">✓</span><p><strong>서버 권한 확인</strong><small>중요한 동작은 화면이 아닌 서버가 판단해요</small></p></div>
+    <div><span class="confidence-icon" aria-hidden="true">↔</span><p><strong>또렷한 거래 단계</strong><small>요청부터 완료까지 상태를 기록해요</small></p></div>
+    <div><span class="confidence-icon" aria-hidden="true">◎</span><p><strong>개인정보 최소화</strong><small>거래에 꼭 필요한 정보만 다뤄요</small></p></div>
+  </div>
+</section>
+
+<section class="market-section shell" aria-labelledby="market-title">
+  <div class="section-heading-row">
+    <div>
+      <span class="eyebrow">FRESH FINDS</span>
+      <h2 id="market-title">오늘의 작은 발견</h2>
+      <p>누군가 아껴온 물건을 천천히 둘러보세요.</p>
+    </div>
+    {% if user.is_authenticated %}
+      <a class="button button-outline" href="{% url 'market:listing_create' %}"><span aria-hidden="true">＋</span> 상품 등록</a>
+    {% endif %}
+  </div>
+
+  <form class="filter-panel" method="get" action="{% url 'market:home' %}" aria-label="상품 검색 필터">
+    <div class="filter-search">
+      <label for="filter-query">검색어</label>
+      <div class="input-with-icon">
+        <span class="search-icon" aria-hidden="true"></span>
+        <input id="filter-query" type="search" name="q" value="{{ query }}" placeholder="상품명이나 설명으로 검색" maxlength="100">
+      </div>
+    </div>
+    <div>
+      <label for="filter-category">카테고리</label>
+      <select id="filter-category" name="category">
+        <option value="">전체 카테고리</option>
+        {% for category in categories %}
+          <option value="{{ category.0 }}"{% if selected_category == category.0 %} selected{% endif %}>{{ category.1 }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="filter-region">거래 지역</label>
+      <input id="filter-region" type="search" name="region" value="{{ selected_region }}" placeholder="예: 서울" maxlength="50">
+    </div>
+    <div>
+      <label for="filter-status">판매 상태</label>
+      <select id="filter-status" name="status">
+        <option value="">모든 상태</option>
+        {% for status in statuses %}<option value="{{ status.0 }}"{% if selected_status == status.0 %} selected{% endif %}>{{ status.1 }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="filter-sort">정렬</label>
+      <select id="filter-sort" name="sort">
+        <option value="newest"{% if selected_sort == 'newest' %} selected{% endif %}>최신순</option>
+        <option value="oldest"{% if selected_sort == 'oldest' %} selected{% endif %}>오래된순</option>
+        <option value="price_low"{% if selected_sort == 'price_low' %} selected{% endif %}>낮은 포인트순</option>
+        <option value="price_high"{% if selected_sort == 'price_high' %} selected{% endif %}>높은 포인트순</option>
+      </select>
+    </div>
+    <div class="filter-action">
+      <button class="button button-primary" type="submit">조건 적용</button>
+    </div>
+    {% if query or selected_category or selected_region or selected_status or selected_sort != 'newest' %}
+      <a class="filter-reset" href="{% url 'market:home' %}">필터 초기화</a>
+    {% endif %}
+  </form>
+
+  {% if page_obj %}
+    <div class="result-meta">
+      <p><strong>{{ page_obj.paginator.count }}</strong>개의 물건을 찾았어요</p>
+      {% if query %}<span>‘{{ query }}’ 검색 결과</span>{% endif %}
+    </div>
+  {% endif %}
+
+  {% if listings or page_obj.object_list %}
+    <div class="listing-grid">
+      {% for listing in page_obj.object_list|default:listings %}
+        <article class="listing-card">
+          <a class="listing-card-link" href="{% url 'market:listing_detail' listing.pk %}" aria-label="{{ listing.title }} 상세 보기">
+            <div class="listing-photo">
+              {% if listing.image %}
+                <img src="{% url 'market:listing_image' listing.pk %}" alt="{{ listing.title }} 상품 사진" loading="lazy">
+              {% else %}
+                <span class="photo-placeholder" aria-hidden="true"><i></i><b>TINY FIND</b></span>
+              {% endif %}
+              <span class="status-pill status-{{ listing.status|lower }}">{{ listing.get_status_display|default:listing.status }}</span>
+            </div>
+            <div class="listing-card-body">
+              <div class="listing-kicker">
+                <span>{{ listing.get_category_display|default:listing.category }}</span>
+                {% if listing.condition %}<span>{{ listing.get_condition_display|default:listing.condition }}</span>{% endif %}
+              </div>
+              <h3>{{ listing.title }}</h3>
+              <p class="listing-price"><strong>{{ listing.price_points }}</strong> 포인트</p>
+              <div class="listing-meta">
+                <span><i class="tiny-avatar" aria-hidden="true">{{ listing.seller.username|first|upper }}</i>{{ listing.seller.username }}</span>
+                {% if listing.created_at %}<time datetime="{{ listing.created_at|date:'c' }}">{{ listing.created_at|timesince }} 전</time>{% endif %}
+              </div>
+            </div>
+          </a>
+        </article>
+      {% endfor %}
+    </div>
+
+    {% if page_obj.has_other_pages %}
+      <nav class="pagination" aria-label="상품 목록 페이지">
+        {% if page_obj.has_previous %}
+          <a href="?q={{ query|urlencode }}&amp;category={{ selected_category|urlencode }}&amp;region={{ selected_region|urlencode }}&amp;status={{ selected_status|urlencode }}&amp;sort={{ selected_sort|urlencode }}&amp;page={{ page_obj.previous_page_number }}" rel="prev">이전</a>
+        {% else %}<span class="disabled">이전</span>{% endif %}
+        <span class="page-current"><strong>{{ page_obj.number }}</strong> / {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+          <a href="?q={{ query|urlencode }}&amp;category={{ selected_category|urlencode }}&amp;region={{ selected_region|urlencode }}&amp;status={{ selected_status|urlencode }}&amp;sort={{ selected_sort|urlencode }}&amp;page={{ page_obj.next_page_number }}" rel="next">다음</a>
+        {% else %}<span class="disabled">다음</span>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="empty-state">
+      <span class="empty-illustration" aria-hidden="true"><i></i></span>
+      <h3>아직 조건에 맞는 물건이 없어요.</h3>
+      <p>검색어를 바꿔보거나, 첫 번째 물건의 새 주인을 찾아주세요.</p>
+      <div class="empty-actions">
+        <a class="button button-outline" href="{% url 'market:home' %}">전체 상품 보기</a>
+        {% if user.is_authenticated %}<a class="button button-primary" href="{% url 'market:listing_create' %}">상품 등록하기</a>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+</section>
+
+<section class="closing-banner">
+  <div class="shell closing-inner">
+    <div>
+      <span class="eyebrow eyebrow-light">TRADE WITH CARE</span>
+      <h2>좋은 거래는 좋은 정보에서 시작해요.</h2>
+      <p>물건의 하자와 사용감을 솔직하게 적고, 플랫폼 안에서 대화해 주세요.</p>
+    </div>
+    <a class="button button-apricot" href="{% url 'market:safety' %}">안전 가이드 읽기</a>
+  </div>
+</section>
+{% endblock %}

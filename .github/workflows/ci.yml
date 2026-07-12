@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+
+      - name: Install hash-locked development dependencies
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+
+      - name: Django and migration checks
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+
+      - name: Production security check
+        env:
+          DJANGO_ENV: production
+          DJANGO_DEBUG: "false"
+          DJANGO_SECRET_KEY: ci-only-${{ github.sha }}-${{ github.run_id }}
+          DJANGO_ALLOWED_HOSTS: ci.example.invalid
+          DJANGO_CSRF_TRUSTED_ORIGINS: https://ci.example.invalid
+          DJANGO_ENABLE_ADMIN: "false"
+        run: python manage.py check --deploy --fail-level WARNING
+
+      - name: Lint and static security analysis
+        run: |
+          ruff check .
+          ruff format --check .
+          bandit -c pyproject.toml -r accounts config market
+
+      - name: Test with coverage
+        run: |
+          coverage erase
+          coverage run manage.py test
+          coverage report --fail-under=85
+
+      - name: Audit runtime dependencies
+        run: pip-audit -r requirements.lock --disable-pip

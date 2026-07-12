@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}로그인 · TINY MARKET{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<section class="auth-shell shell">
+  <div class="auth-story" aria-labelledby="login-story-title">
+    <span class="eyebrow eyebrow-light">WELCOME BACK</span>
+    <h1 id="login-story-title">다시 만나 반가워요.</h1>
+    <p>내가 찜한 물건과 이어가던 거래 대화를 안전하게 확인하세요.</p>
+    <ul class="soft-check-list">
+      <li><span aria-hidden="true">✓</span> 연락처를 공개하지 않는 거래 대화</li>
+      <li><span aria-hidden="true">✓</span> 거래 단계별 상태와 기록 확인</li>
+      <li><span aria-hidden="true">✓</span> 서버에서 한 번 더 확인하는 접근 권한</li>
+    </ul>
+  </div>
+
+  <div class="auth-card">
+    <div class="auth-heading">
+      <span class="mini-mark" aria-hidden="true"></span>
+      <p class="eyebrow">MEMBER LOGIN</p>
+      <h2>로그인</h2>
+      <p>아이디와 비밀번호를 입력해 주세요.</p>
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" class="stack-form" novalidate>
+      {% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      {% for field in form %}
+        <div class="field-group{% if field.errors %} field-error{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <button class="button button-primary button-full" type="submit">안전하게 로그인</button>
+    </form>
+
+    <p class="auth-switch">아직 계정이 없나요? <a href="{% url 'accounts:signup' %}">회원가입</a></p>
+  </div>
+</section>
+{% endblock %}

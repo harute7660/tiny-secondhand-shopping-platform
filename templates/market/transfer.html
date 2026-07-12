@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}포인트 보내기 · TINY MARKET{% endblock %}
+{% block body_class %}transfer-page{% endblock %}
+
+{% block content %}
+<section class="shell transfer-shell">
+  <nav class="breadcrumbs breadcrumbs-dark" aria-label="현재 위치"><a href="{% url 'market:wallet' %}">내 지갑</a><span aria-hidden="true">/</span><span aria-current="page">포인트 보내기</span></nav>
+
+  <div class="transfer-grid">
+    <div class="transfer-intro">
+      <span class="eyebrow">SEND TINY POINTS</span>
+      <h1>포인트 보내기</h1>
+      <p>받는 사용자와 금액을 한 번 더 확인해 주세요. 완료된 전송은 기록에 남습니다.</p>
+      <div class="mini-balance"><span>현재 잔액</span><p><strong>{{ wallet.balance_cache|default:0 }}</strong> P</p></div>
+      <div class="transfer-flow" aria-label="전송 순서">
+        <span class="is-current"><i>1</i>정보 입력</span><b aria-hidden="true"></b><span><i>2</i>서버 검증</span><b aria-hidden="true"></b><span><i>3</i>기록 완료</span>
+      </div>
+    </div>
+
+    <div class="form-card transfer-card">
+      <div class="form-card-heading"><span class="step-badge">P</span><div><h2>전송 정보</h2><p>실제 현금이 아닌 교육용 포인트입니다.</p></div></div>
+      {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+      <form method="post" class="stack-form" novalidate>
+        {% csrf_token %}
+        {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+        {% for field in form.visible_fields %}
+          <div class="field-group{% if field.errors %} field-error{% endif %}">
+            <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required-mark" aria-label="필수">*</span>{% endif %}</label>
+            {{ field }}
+            {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
+            {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+          </div>
+        {% endfor %}
+        <div class="privacy-note"><span aria-hidden="true">i</span><p>전송 시점에 잔액과 수신 계정을 서버에서 다시 확인합니다.</p></div>
+        <div class="form-actions"><a class="button button-quiet" href="{% url 'market:wallet' %}">취소</a><button class="button button-primary" type="submit">포인트 보내기</button></div>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}거래 대화 · TINY MARKET{% endblock %}
+{% block body_class %}inbox-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-inbox">
+  <div class="shell page-hero-row">
+    <div>
+      <span class="eyebrow eyebrow-light">TRADE CONVERSATIONS</span>
+      <h1>거래 대화</h1>
+      <p>상품별 대화와 거래 기록을 한곳에서 확인하세요.</p>
+    </div>
+    <div class="privacy-bubble"><span aria-hidden="true">✓</span><p><strong>연락처 없이 대화해요</strong><small>개인정보를 채팅에 남기지 마세요.</small></p></div>
+  </div>
+</section>
+
+<section class="shell inbox-layout">
+  <div class="inbox-main">
+    <div class="section-heading-row compact-heading">
+      <div><h2>이어가던 대화</h2><p>{% if conversations %}상품을 선택해 거래 내용을 확인하세요.{% else %}아직 시작한 거래 대화가 없습니다.{% endif %}</p></div>
+    </div>
+
+    {% if conversations %}
+      <div class="conversation-list">
+        {% for item in conversations %}
+          <article class="conversation-card">
+            <a href="{% url 'market:conversation_detail' item.pk %}" aria-label="{% if item.listing_visible %}{{ item.listing.title }}{% else %}비공개 상품{% endif %} 거래 대화 열기">
+              <div class="conversation-thumb">
+                {% if item.listing_visible and item.listing.image %}<img src="{% url 'market:listing_image' item.listing.pk %}" alt="">{% else %}<span aria-hidden="true">TM</span>{% endif %}
+              </div>
+              <div class="conversation-summary">
+                <div class="conversation-topline">
+                  {% if item.listing_visible %}<span class="status-pill status-{{ item.listing.status|lower }}">{{ item.listing.get_status_display|default:item.listing.status }}</span>{% else %}<span class="status-pill">비공개</span>{% endif %}
+                  {% if item.listing_visible and item.listing.created_at %}<time datetime="{{ item.listing.created_at|date:'c' }}">{{ item.listing.created_at|date:"m.d" }}</time>{% endif %}
+                </div>
+                <h3>{% if item.listing_visible %}{{ item.listing.title }}{% else %}운영 정책에 따라 비공개된 상품{% endif %}</h3>
+                <p class="conversation-person">
+                  {% if user == item.seller %}구매자 · <strong>{{ item.buyer.username }}</strong>{% else %}판매자 · <strong>{{ item.seller.username }}</strong>{% endif %}
+                </p>
+                {% if item.last_message_body %}<p class="conversation-preview"><strong>{{ item.last_message_sender }}</strong> {{ item.last_message_body|truncatechars:68 }}</p>{% else %}<p class="conversation-preview muted">아직 메시지가 없습니다.</p>{% endif %}
+              </div>
+              <span class="conversation-arrow" aria-hidden="true">→</span>
+            </a>
+          </article>
+        {% endfor %}
+      </div>
+      {% if page_obj.has_other_pages %}
+        <nav class="pagination" aria-label="대화 목록 페이지">
+          {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}" rel="prev">이전</a>{% else %}<span class="disabled">이전</span>{% endif %}
+          <span class="page-current"><strong>{{ page_obj.number }}</strong> / {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}" rel="next">다음</a>{% else %}<span class="disabled">다음</span>{% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <div class="empty-state empty-state-small">
+        <span class="empty-chat" aria-hidden="true"><i></i></span>
+        <h3>아직 거래 대화가 없어요.</h3>
+        <p>마음에 드는 물건을 발견하면 판매자와 안전하게 대화를 시작해 보세요.</p>
+        <a class="button button-primary" href="{% url 'market:home' %}">상품 둘러보기</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <aside class="inbox-aside" aria-label="대화 안전 수칙">
+    <div class="aside-heading"><span aria-hidden="true">✓</span><h2>대화 전 약속</h2></div>
+    <ol class="numbered-notes">
+      <li><span>1</span><p><strong>플랫폼 안에서 대화</strong><small>외부 메신저 유도에 주의하세요.</small></p></li>
+      <li><span>2</span><p><strong>민감정보는 보내지 않기</strong><small>비밀번호·인증번호·계좌정보를 공유하지 마세요.</small></p></li>
+      <li><span>3</span><p><strong>문제가 생기면 신고</strong><small>대화와 상품 기록을 바탕으로 확인해요.</small></p></li>
+    </ol>
+    <a class="text-link" href="{% url 'market:safety' %}">안전 거래 가이드 →</a>
+  </aside>
+</section>
+{% endblock %}

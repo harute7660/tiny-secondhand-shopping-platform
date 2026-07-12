@@ -1,0 +1,90 @@
+{% load static %}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="작은 거래도 안심할 수 있는 따뜻한 중고마켓, TINY MARKET">
+  <title>{% block title %}TINY MARKET{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/site.css' %}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main-content">본문으로 바로가기</a>
+
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="{% url 'market:home' %}" aria-label="TINY MARKET 홈">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span class="brand-copy">
+          <strong>TINY MARKET</strong>
+          <small>작지만 믿음직한 거래</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="주요 메뉴">
+        <a href="{% url 'market:home' %}">둘러보기</a>
+        <a href="{% url 'market:safety' %}">안전 가이드</a>
+        {% if user.is_authenticated %}
+          <a href="{% url 'market:conversation_list' %}">거래 대화</a>
+          <a href="{% url 'market:wallet' %}">내 지갑</a>
+        {% endif %}
+      </nav>
+
+      <div class="header-actions">
+        {% if user.is_authenticated %}
+          <span class="user-chip" title="현재 로그인한 사용자">
+            <span class="user-avatar" aria-hidden="true">{{ user.username|first|upper }}</span>
+            <span class="user-name">{{ user.username }}</span>
+          </span>
+          <a class="button button-primary button-small" href="{% url 'market:listing_create' %}">물건 올리기</a>
+          <form class="inline-form" method="post" action="{% url 'accounts:logout' %}">
+            {% csrf_token %}
+            <button class="button button-quiet button-small" type="submit">로그아웃</button>
+          </form>
+        {% else %}
+          <a class="button button-quiet button-small" href="{% url 'accounts:login' %}">로그인</a>
+          <a class="button button-primary button-small" href="{% url 'accounts:signup' %}">시작하기</a>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  {% if messages %}
+    <section class="shell message-stack" aria-label="알림" aria-live="polite">
+      {% for message in messages %}
+        {% if message.tags %}
+          <div class="flash-message flash-{{ message.tags }}">
+            <span class="flash-dot" aria-hidden="true"></span>
+            <p>{{ message }}</p>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <main id="main-content" tabindex="-1">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <a class="brand brand-footer" href="{% url 'market:home' %}">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span class="brand-copy"><strong>TINY MARKET</strong><small>사람과 물건의 다음 장면</small></span>
+        </a>
+        <p class="footer-note">실제 결제 서비스가 아닌 교육용 중고거래 플랫폼입니다.</p>
+      </div>
+      <div class="footer-links" aria-label="하단 메뉴">
+        <a href="{% url 'market:safety' %}">안전 거래 원칙</a>
+        <a href="{% url 'market:safety' %}#report-help">문제 대응 안내</a>
+        <a href="{% url 'market:home' %}">상품 둘러보기</a>
+      </div>
+      <div class="trust-stamp">
+        <span aria-hidden="true">✓</span>
+        <p><strong>Secure by design</strong><small>개인정보는 적게, 권한 검사는 꼼꼼하게</small></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

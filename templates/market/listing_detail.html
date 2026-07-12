@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}{{ listing.title }} · TINY MARKET{% endblock %}
+{% block body_class %}detail-page{% endblock %}
+
+{% block content %}
+<section class="shell detail-shell">
+  <nav class="breadcrumbs breadcrumbs-dark" aria-label="현재 위치">
+    <a href="{% url 'market:home' %}">홈</a><span aria-hidden="true">/</span>
+    <span>{{ listing.get_category_display|default:listing.category }}</span><span aria-hidden="true">/</span>
+    <span aria-current="page">{{ listing.title|truncatechars:28 }}</span>
+  </nav>
+
+  <div class="detail-grid">
+    <div class="detail-media">
+      <div class="detail-photo">
+        {% if listing.image %}
+          <img src="{% url 'market:listing_image' listing.pk %}" alt="{{ listing.title }} 상품 사진">
+        {% else %}
+          <span class="photo-placeholder photo-placeholder-large" aria-hidden="true"><i></i><b>TINY FIND</b><small>등록된 사진이 없어요</small></span>
+        {% endif %}
+        <span class="status-pill status-{{ listing.status|lower }}">{{ listing.get_status_display|default:listing.status }}</span>
+      </div>
+      <div class="detail-trust-note"><span aria-hidden="true">✓</span><p><strong>상품 정보를 꼭 확인하세요</strong><small>상태·하자·거래 방법을 확인한 뒤 대화를 시작해 주세요.</small></p></div>
+    </div>
+
+    <article class="detail-content">
+      <div class="detail-topline">
+        <div class="listing-kicker"><span>{{ listing.get_category_display|default:listing.category }}</span>{% if listing.condition %}<span>{{ listing.get_condition_display|default:listing.condition }}</span>{% endif %}</div>
+        {% if user.is_authenticated and user != listing.seller %}
+          <form method="post" action="{% url 'market:favorite_toggle' listing.pk %}">
+            {% csrf_token %}
+            <button class="favorite-button{% if is_favorite %} is-active{% endif %}" type="submit" aria-pressed="{% if is_favorite %}true{% else %}false{% endif %}" aria-label="{% if is_favorite %}찜 해제{% else %}찜하기{% endif %}">
+              <span aria-hidden="true">♡</span><span>{% if is_favorite %}찜했어요{% else %}찜하기{% endif %}</span>
+            </button>
+          </form>
+        {% endif %}
+      </div>
+
+      <h1>{{ listing.title }}</h1>
+      <p class="detail-price"><strong>{{ listing.price_points }}</strong><span>포인트</span></p>
+      <div class="seller-row">
+        <span class="seller-avatar" aria-hidden="true">{{ listing.seller.username|first|upper }}</span>
+        <div><span>판매자</span><strong>{{ listing.seller.username }}</strong><small>{{ listing.seller.date_joined|date:"Y년 m월" }} 가입 · 판매 완료 {{ seller_completed_count }}건</small></div>
+        {% if listing.created_at %}<time datetime="{{ listing.created_at|date:'c' }}">{{ listing.created_at|timesince }} 전 등록</time>{% endif %}
+      </div>
+
+      <dl class="detail-facts">
+        {% if listing.condition %}<div><dt>상품 상태</dt><dd>{{ listing.get_condition_display|default:listing.condition }}</dd></div>{% endif %}
+        {% if listing.region %}<div><dt>거래 지역</dt><dd>{{ listing.region }}</dd></div>{% endif %}
+        <div><dt>판매 상태</dt><dd><span class="inline-status status-{{ listing.status|lower }}">{{ listing.get_status_display|default:listing.status }}</span></dd></div>
+      </dl>
+
+      <div class="detail-description">
+        <h2>상품 설명</h2>
+        <p>{{ listing.description|default:"판매자가 작성한 설명이 없습니다." }}</p>
+      </div>
+
+      <div class="detail-actions">
+        {% if user == listing.seller %}
+          {% if listing.status == 'ACTIVE' or listing.status == 'RESERVED' %}<a class="button button-primary" href="{% url 'market:listing_update' listing.pk %}">상품 정보 수정</a>{% endif %}
+          {% if listing.status != 'BLOCKED' and listing.status != 'DELETED' %}<a class="button button-danger-outline" href="{% url 'market:listing_delete' listing.pk %}">상품 삭제</a>{% endif %}
+        {% elif user.is_authenticated and can_contact %}
+          <form method="post" action="{% url 'market:conversation_start' listing.pk %}" class="grow-form">
+            {% csrf_token %}
+            <button class="button button-primary button-full" type="submit">판매자와 거래 대화 시작</button>
+          </form>
+        {% elif not user.is_authenticated %}
+          <a class="button button-primary button-full" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">로그인하고 거래 대화 시작</a>
+        {% else %}
+          <button class="button button-disabled button-full" type="button" disabled>현재 대화를 시작할 수 없어요</button>
+        {% endif %}
+      </div>
+
+      {% if user == listing.seller and listing.status != 'BLOCKED' and listing.status != 'DELETED' %}
+        <form method="post" action="{% url 'market:listing_status_update' listing.pk %}" class="listing-status-actions" aria-label="판매 상태 변경">
+          {% csrf_token %}
+          <span>판매 상태 변경</span>
+          {% if listing.status != 'ACTIVE' %}<button type="submit" name="status" value="ACTIVE">판매 중으로</button>{% endif %}
+          {% if listing.status == 'ACTIVE' %}<button type="submit" name="status" value="RESERVED">예약 중으로</button>{% endif %}
+          {% if listing.status != 'SOLD' %}<button type="submit" name="status" value="SOLD">판매 완료로</button>{% endif %}
+        </form>
+      {% elif user == listing.seller and listing.status == 'BLOCKED' %}
+        <div class="form-alert" role="status"><p>운영 정책 검토로 차단된 상품입니다. 관리자를 통해 상태를 확인하세요.</p></div>
+      {% endif %}
+
+      {% if user.is_authenticated and user != listing.seller %}
+        <a class="report-link" href="{% url 'market:report_create' %}?listing={{ listing.pk }}"><span aria-hidden="true">!</span> 이 상품에 문제가 있나요? 신고하기</a>
+      {% endif %}
+    </article>
+  </div>
+</section>
+
+<section class="detail-safety-band">
+  <div class="shell detail-safety-grid">
+    <div><span aria-hidden="true">01</span><p><strong>플랫폼 안에서 대화하기</strong><small>외부 메신저나 계좌이체 유도에 응하지 마세요.</small></p></div>
+    <div><span aria-hidden="true">02</span><p><strong>상품 상태 다시 확인하기</strong><small>하자와 구성품을 거래 전 한 번 더 확인하세요.</small></p></div>
+    <div><span aria-hidden="true">03</span><p><strong>수상하면 즉시 신고하기</strong><small>신고 대상과 사유는 상대방에게 공개되지 않습니다.</small></p></div>
+  </div>
+</section>
+{% endblock %}

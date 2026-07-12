@@ -1,0 +1,33 @@
+# Secrets and environment-specific configuration
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Django runtime data
+*.sqlite3
+media/
+staticfiles/
+var/
+*.log
+
+# Local and generated artifacts
+tmp/
+output/
+dist/
+build/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

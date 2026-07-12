@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block title %}잘못된 요청 · TINY MARKET{% endblock %}
+{% block body_class %}error-page{% endblock %}
+{% block content %}<section class="shell error-shell"><div class="error-art"><span>400</span><i></i></div><span class="eyebrow">BAD REQUEST</span><h1>요청을 이해하지 못했어요.</h1><p>입력 내용이나 주소를 다시 확인해 주세요. 안전하지 않거나 올바르지 않은 요청은 처리되지 않습니다.</p><div class="error-actions"><a class="button button-primary" href="{% url 'market:home' %}">홈으로 돌아가기</a><a class="button button-outline" href="{% url 'market:safety' %}">안전 가이드</a></div></section>{% endblock %}

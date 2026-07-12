@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}{% if listing_visible %}{{ conversation.listing.title }}{% else %}비공개 상품{% endif %} 거래 대화 · TINY MARKET{% endblock %}
+{% block body_class %}chat-page{% endblock %}
+
+{% block content %}
+<section class="shell chat-shell">
+  <h1 class="sr-only">{% if listing_visible %}{{ conversation.listing.title }}{% else %}비공개 상품{% endif %} 거래 대화</h1>
+  <nav class="breadcrumbs breadcrumbs-dark" aria-label="현재 위치">
+    <a href="{% url 'market:conversation_list' %}">거래 대화</a><span aria-hidden="true">/</span>
+    <span aria-current="page">{% if listing_visible %}{{ conversation.listing.title|truncatechars:30 }}{% else %}비공개 상품{% endif %}</span>
+  </nav>
+
+  <div class="chat-card">
+    <header class="chat-header">
+      {% if listing_visible %}<a class="chat-product" href="{% url 'market:listing_detail' conversation.listing.pk %}">
+        <span class="chat-thumb">
+          {% if conversation.listing.image %}<img src="{% url 'market:listing_image' conversation.listing.pk %}" alt="">{% else %}<i aria-hidden="true">TM</i>{% endif %}
+        </span>
+        <span><small>{{ conversation.listing.get_status_display|default:conversation.listing.status }}</small><strong>{{ conversation.listing.title }}</strong><b>{{ conversation.listing.price_points }} 포인트</b></span>
+      </a>{% else %}<div class="chat-product chat-product-private"><span class="chat-thumb"><i aria-hidden="true">TM</i></span><span><small>비공개</small><strong>운영 정책에 따라 비공개된 상품</strong><b>상품 정보는 노출하지 않습니다.</b></span></div>{% endif %}
+      <div class="chat-partner">
+        <span class="seller-avatar" aria-hidden="true">{% if user == conversation.seller %}{{ conversation.buyer.username|first|upper }}{% else %}{{ conversation.seller.username|first|upper }}{% endif %}</span>
+        <p><small>{% if user == conversation.seller %}구매자{% else %}판매자{% endif %}</small><strong>{% if user == conversation.seller %}{{ conversation.buyer.username }}{% else %}{{ conversation.seller.username }}{% endif %}</strong></p>
+      </div>
+    </header>
+
+    <div class="chat-safety-notice" role="note"><span aria-hidden="true">i</span><p>외부 결제·메신저로 이동하자는 요청이나 비밀번호·인증번호 요구에 응하지 마세요.</p></div>
+
+    <div class="message-thread" aria-label="메시지 목록" role="log" tabindex="0">
+      {% with thread_messages=conversation_messages|default:conversation.messages.all %}
+      {% if thread_messages %}
+        {% for message in thread_messages %}
+          <article class="message-row{% if message.sender == user %} message-own{% endif %}">
+            <span class="message-avatar" aria-hidden="true">{{ message.sender.username|first|upper }}</span>
+            <div class="message-block">
+              <span class="message-sender">{% if message.sender == user %}나{% else %}{{ message.sender.username }}{% endif %}</span>
+              <p>{{ message.body }}</p>
+              <time datetime="{{ message.created_at|date:'c' }}">{{ message.created_at|date:"m월 d일 H:i" }}</time>
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <div class="thread-empty"><span aria-hidden="true">···</span><p><strong>첫 메시지를 보내보세요.</strong><small>상품 상태와 거래 방법을 먼저 확인하면 좋아요.</small></p></div>
+      {% endif %}
+      {% endwith %}
+    </div>
+
+    {% if interaction_allowed %}
+    <form method="post" class="message-form" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+      {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+      {% for field in form.visible_fields %}
+        <div class="field-group{% if field.errors %} field-error{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <button class="button button-primary" type="submit">메시지 보내기</button>
+    </form>
+    {% else %}
+      <div class="chat-disabled" role="status"><span aria-hidden="true">i</span><p><strong>현재 메시지를 보낼 수 없습니다.</strong><small>차단 상태이거나 상품이 거래 가능한 상태가 아닙니다.</small></p></div>
+    {% endif %}
+
+    <footer class="chat-footer-actions">
+      {% if listing_visible and user != conversation.listing.seller %}<a href="{% url 'market:report_create' %}?listing={{ conversation.listing.pk }}"><span aria-hidden="true">!</span> 상품 신고</a>{% endif %}
+      <a href="{% url 'market:report_create' %}?conversation={{ conversation.pk }}"><span aria-hidden="true">!</span> 상대 사용자 신고</a>
+      <form method="post" action="{% url 'market:user_block_toggle' counterpart.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <button type="submit">{% if is_blocking %}사용자 차단 해제{% else %}사용자 차단{% endif %}</button>
+      </form>
+    </footer>
+  </div>
+</section>
+{% endblock %}

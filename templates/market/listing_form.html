@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}{% if listing %}상품 수정{% else %}상품 등록{% endif %} · TINY MARKET{% endblock %}
+{% block body_class %}form-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-compact">
+  <div class="shell">
+    <nav class="breadcrumbs" aria-label="현재 위치">
+      <a href="{% url 'market:home' %}">홈</a><span aria-hidden="true">/</span>
+      <span aria-current="page">{% if listing %}상품 수정{% else %}상품 등록{% endif %}</span>
+    </nav>
+    <span class="eyebrow eyebrow-light">PASS IT FORWARD</span>
+    <h1>{% if listing %}상품 정보를 다듬어요.{% else %}물건의 다음 이야기를 들려주세요.{% endif %}</h1>
+    <p>상태와 하자를 솔직하게 적을수록 더 빠르고 기분 좋은 거래가 시작됩니다.</p>
+  </div>
+</section>
+
+<section class="shell form-layout">
+  <div class="form-card form-card-wide">
+    <div class="form-card-heading">
+      <span class="step-badge">01</span>
+      <div><h2>{% if listing %}상품 정보 수정{% else %}상품 기본 정보{% endif %}</h2><p><span class="required-mark">*</span> 표시는 꼭 입력해 주세요.</p></div>
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        <strong>입력 내용을 다시 확인해 주세요.</strong>
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" class="stack-form listing-form" novalidate>
+      {% csrf_token %}
+      {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+      {% for field in form.visible_fields %}
+        <div class="field-group{% if field.errors %} field-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} checkbox-field{% endif %}">
+          {% if field.field.widget.input_type == 'checkbox' %}
+            <div class="checkbox-line">{{ field }}<label for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+          {% else %}
+            <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required-mark" aria-label="필수">*</span>{% endif %}</label>
+            {{ field }}
+          {% endif %}
+          {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+
+      <div class="form-actions">
+        {% if listing %}<a class="button button-quiet" href="{% url 'market:listing_detail' listing.pk %}">취소</a>{% else %}<a class="button button-quiet" href="{% url 'market:home' %}">취소</a>{% endif %}
+        <button class="button button-primary" type="submit">{% if listing %}수정 내용 저장{% else %}상품 등록하기{% endif %}</button>
+      </div>
+    </form>
+  </div>
+
+  <aside class="form-aside" aria-label="상품 등록 도움말">
+    <div class="tip-card tip-card-apricot">
+      <span class="tip-number" aria-hidden="true">1</span>
+      <h2>상태는 구체적으로</h2>
+      <p>사용 기간, 눈에 보이는 흠집, 작동 여부를 빠짐없이 적어주세요.</p>
+    </div>
+    <div class="tip-card">
+      <span class="tip-number" aria-hidden="true">2</span>
+      <h2>사진은 실제 모습으로</h2>
+      <p>개인정보가 보이지 않는 사진을 사용하고, 파일 형식과 크기 제한을 확인하세요.</p>
+    </div>
+    <div class="tip-card safety-mini-card">
+      <span class="confidence-icon shield-icon" aria-hidden="true">✓</span>
+      <div><h2>등록 전 확인</h2><p>의약품, 주류, 개인정보 등 거래금지 품목은 등록할 수 없습니다.</p><a href="{% url 'market:safety' %}">거래금지 품목 보기 →</a></div>
+    </div>
+  </aside>
+</section>
+{% endblock %}

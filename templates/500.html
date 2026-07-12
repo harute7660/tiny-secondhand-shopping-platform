@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block title %}잠시 문제가 생겼어요 · TINY MARKET{% endblock %}
+{% block body_class %}error-page{% endblock %}
+{% block content %}<section class="shell error-shell"><div class="error-art"><span>500</span><i></i></div><span class="eyebrow">TEMPORARY ERROR</span><h1>잠시 쉬어가야 할 것 같아요.</h1><p>요청을 처리하는 중 문제가 생겼습니다. 입력한 비밀번호나 내부 오류 정보는 화면에 표시하지 않습니다. 잠시 후 다시 시도해 주세요.</p><div class="error-actions"><a class="button button-primary" href="{% url 'market:home' %}">홈으로 돌아가기</a></div></section>{% endblock %}
