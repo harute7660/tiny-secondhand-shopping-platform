@@ -218,6 +218,18 @@
 - 검증: 격리 settings negative tests, production deploy check, 빈 대상 디렉터리 dev lock hash 설치.
 - 잔여 위험: 실제 secret 엔트로피·회전은 비밀 저장소와 운영 절차로 보장한다.
 
+## 2026-07-12 - 감청색 반응형 UI 재설계와 경계 폭 감사
+
+- 단계: 시스템 설계 / 구현 / 테스트 / 유지보수 기록
+- 수행 작업: 기존 semantic HTML과 Flexbox·Grid를 유지하면서 `#1E3A8A` 중심 토큰, 흰색 glass header, 그라데이션 hero, 카드·버튼·폼 shadow와 1080/900/700/470/360px 반응형 규칙을 적용했다.
+- 이유: 중고거래의 신뢰감과 정보 위계를 분명히 하면서 기능·보안 회귀 없이 데스크톱과 모바일에서 같은 흐름을 제공하기 위해서다.
+- 검토한 대안: 로컬 Tailwind CLI/PostCSS는 현재 템플릿 재표기와 Node 빌드·lock·CI 감사를 늘리고, Play CDN은 외부 script와 CSP 예외가 필요하다. 이틀 일정에서는 둘 다 검증 비용이 커지며 CSS Grid/Flex가 요구 범위를 충족하므로 채택하지 않았다.
+- 발견한 품질 약점: 기존 35~40px 보조 조작 요소, 901px 인증 헤더 cascade, 긴 사용자 입력의 320px 가로 넘침, 회원 메뉴의 좁은 화면 overflow, sticky header의 anchor 가림 가능성을 정적 감사에서 확인했다.
+- 변경: header·검색·CTA·상태 변경·페이지네이션·신고 등 주요 조작 컨트롤을 최소 44px로 만들고 1080px header 간격을 재선언했다. 긴 텍스트에 `overflow-wrap`, 회원 nav에 내부 스크롤·fade·snap, 빈 결과 action에 모바일 세로 배치, anchor에 `scroll-margin-top`을 적용했다. `body`의 320px 강제 최소 폭도 제거했다.
+- 보안 영향: 외부 CDN·script·font와 inline style을 추가하지 않았고 Django auto-escape, CSRF, strict CSP와 서버 권한 경계는 변경하지 않았다. 새 제3자 UI 의존성에서 오는 공급망 공격면을 추가하지 않았다.
+- 테스트/증적: 1440×1000 실화면에서 sticky header·4열 Grid·hero·button·문서 가로 overflow 0을 확인했다. 모바일 브라우저 재접속은 도구의 로컬 URL 정책에 막혀 우회하지 않았으며, 최종 media-query cascade와 320px 폭을 독립 정적 감사했다. 변경 후 Django 120개 회귀, system check, migration 일치, CSS 중괄호 798/798, 필수 반응형 규칙, 외부 asset·inline style/script 0건, `git diff --check`를 모두 통과했다.
+- 잔여 위험/다음 작업: 320px·200% 확대, 실제 키보드·스크린리더·모바일 기기 수동 QA는 제출 전 릴리스 체크에 남긴다.
+
 ## 2026-07-13 - 유지보수·제출 준비 범위
 
 - 공식 제출 기한은 사용자 정정 공지에 따라 2026-07-24이며, 개인 작업 목표는 2026-07-13까지 개발 결과와 보고서 초안을 완성하는 것이다.

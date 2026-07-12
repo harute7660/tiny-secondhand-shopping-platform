@@ -65,6 +65,7 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 | 2026-07-12 | 요구사항 분석 | 첨부 PDF 34~36페이지 확인, 7개 필수 기능과 인수 조건 정의, 당근·번개장터 조사 | REQ-ID와 보안조건 연결 |
 | 2026-07-12 | 시스템 설계 | Django 모놀리스, ERD, 권한표, 상태전이, 위협모델, KISA 적용성 판정 | 설계 결정과 선택 이유 기록 |
 | 2026-07-12 | 구현 | 계정, 상품, 이미지, 대화, 신고·차단, DEMO POINT, Admin, 보안설정 구현 | 기능별 정상·실패·인가 테스트 작성 |
+| 2026-07-12 | UI 재설계 | `#1E3A8A` 디자인 토큰, Flexbox·Grid, 반응형 header·card·button·form 구현 | 외부 UI 의존성 없이 접근성·CSP 유지 |
 | 2026-07-12~13 | 검토·수정 | 병렬 코드리뷰, 브라우저 QA, 정적·의존성 검사, 발견 약점 수정 | 미조치 Critical/High 0건 목표 |
 | 2026-07-13 | 최종 검증 | 전체 회귀, coverage, lint, Bandit, pip-audit, deploy check, 클린 설치 | 실제 명령 결과로 최종 수치 갱신 |
 | 2026-07-13 | 릴리스·문서 | Public GitHub, README 재현, SHA/tag, 보고서 PDF 렌더링 | 로그아웃 공개 확인과 PDF 육안검수 |
@@ -185,6 +186,8 @@ flowchart LR
 | `templates/static` | 서버 렌더링 UI, 접근성·반응형 CSS | `templates/`, `static/css/` |
 | `.github` | CI, CodeQL, Dependabot | workflow와 설정 파일 |
 | `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~09` |
+
+UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 감청색 `#1E3A8A`를 주색으로 흰색 배경, blue gradient hero, sticky glass header, 20px radius card와 일관된 shadow를 적용했다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
 
 ### 5.3 데이터 모델
 
@@ -486,6 +489,7 @@ N/A 예시는 XML·LDAP·전자서명·외부 TLS 요청·사용자 URL 서버 �
 | Bandit | `bandit -c pyproject.toml -r accounts config market` | 이슈 0건 | 로컬 실행 결과 |
 | Runtime pip-audit | `pip-audit -r requirements.lock --disable-pip` | 알려진 취약점 0건 | 로컬 실행 결과 |
 | 운영 deploy check | 운영 환경변수로 `python manage.py check --deploy --fail-level WARNING` | 문제 0건 | 로컬 실행 결과 |
+| 반응형 UI 구조 | CSS 중괄호·필수 breakpoint·외부 asset·template inline style/script 검사 | 중괄호 798/798, 1080/900/700/470/360px 규칙 존재, 외부 asset·inline style/script 0건 | 로컬 실행 결과와 TEST-R009 |
 | Runtime hash 설치 | `pip install --require-hashes -r requirements.lock` | 빈 대상 설치 성공 | 로컬 설치 결과 |
 | Dev hash 설치 | `pip install --require-hashes -r requirements-dev.lock` | 빈 대상 설치 성공 | 로컬 설치 결과 |
 | 시크릿·금지 패턴 | 현재 파일+Git 이력, 위험 API·template escape 우회 검색 | 일치 0건 | 로컬 검색 결과 |
@@ -494,6 +498,8 @@ N/A 예시는 XML·LDAP·전자서명·외부 TLS 요청·사용자 URL 서버 �
 ### 10.4 브라우저 수동 QA
 
 2026-07-12 브라우저 QA에서는 판매자 가입·로그인, 상품 등록·예약 상태 변경, 구매자 가입·로그인, 상품 상세·대화 시작·메시지, 대화 문맥 신고 화면, DEMO POINT 24,000P 송금과 잔액 100,000→76,000, 모바일 390px 로그아웃 노출을 확인했다. 폼 label을 한국어화한 뒤 재확인했고 브라우저 console 오류·경고가 없었다.
+
+감청색 UI 적용 후 1440×1000에서 흰색 sticky header, blue gradient hero, 4열 상품 Grid, 카드 radius 20px와 shadow, 문서 가로 overflow 0을 다시 실측했다. 모바일 재접속은 브라우저 도구의 로컬 URL 보안 정책에 막혀 우회하지 않았고, 대신 1080/900/700/470/360px cascade를 독립 감사했다. 이 감사에서 901px 인증 header 경계, 35~40px 주요 보조 컨트롤, 긴 사용자 입력과 회원 nav overflow, sticky anchor 가림 가능성을 찾아 1080px 재선언, 주요 컨트롤 최소 44px target, `overflow-wrap`, 내부 nav scroll·fade, `scroll-margin-top`으로 수정했다. 실제 320px·200% 확대와 스크린리더 QA는 완료로 과장하지 않고 릴리스 전 항목으로 유지한다.
 
 최종 보안 감사 후 변경된 일반·Admin 로그인 제한, 성공 시 account-only clear, 제한 staff의 forged POST 거부, rate limit 시 이미지 decoder 미호출, 차단 상품 metadata 비공개는 자동 회귀로 재검증했다. 모바일 320px·200% 확대, 키보드·실제 스크린리더·색 대비 수동 QA는 PDF 제출 전 확인 대상으로 남는다.
 
@@ -568,6 +574,7 @@ OpenAI Codex와 병렬 검토 에이전트를 요구사항 분석, 공식 자료
 | 구현 | 계정·상품·대화·원장·Admin 초안 | AI 코드는 권한·경쟁조건을 빠뜨릴 수 있음 | 코드리뷰, DB 제약, 정상+악성+forged POST 테스트 |
 | 보안 감사 | Admin 권한상승, 로그인 동시성, 증거 변경, rate 순서 발견 | 제안 수정도 새 DoS·lock 문제를 만들 수 있음 | 수정안 재검토, 짧은 예약·전용 권한·사전 gate로 재설계 |
 | 자동검사 | Ruff·Bandit·pip-audit·coverage 해석 | 도구 0건이 취약점 0건을 뜻하지 않음 | 수동 위협모델·브라우저 QA·잔여위험 병행 |
+| UI 재설계 | 감청색 토큰·Grid/Flex override와 경계 폭 감사 | AI가 cascade·한글/사용자 입력 폭·실제 접근성을 오판할 수 있음 | 1440×1000 실측, 독립 정적 감사, 전체 회귀와 제출 전 실제 모바일 QA |
 | 보고서 | 문서 초안과 추적표 통합 | GitHub URL·원격 검사 성공을 추정할 수 있음 | 로컬 수치는 실제 결과만 기록하고 Public URL·Actions·PDF 외부 상태만 placeholder 유지 |
 
 AI 프롬프트에는 실제 비밀번호, 토큰, 세션 쿠키, 비밀키, 개인정보를 넣지 않았다. 제안된 기능이 과제 최소 요구에 없거나 보안 검증 범위를 지나치게 늘리면 채택하지 않았다. 예를 들어 React+REST+JWT, 실제 결제·외부 이미지 URL, 구현하지 않은 주문 상태 머신을 완료로 표현하는 안을 거절했다.

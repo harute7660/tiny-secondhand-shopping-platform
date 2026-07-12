@@ -19,6 +19,7 @@ TINY MARKET의 사용자 영향 변경과 보안 결정을 기록합니다. 정�
 
 ### Changed
 
+- 헤더·상품 카드·버튼·폼을 `#1E3A8A` 중심의 감청색·흰색 디자인으로 통일하고, 1080/900/700/470/360px 경계에서 Grid 열 수와 Flex 배치를 조정했습니다. 헤더·검색·CTA·상태 변경·페이지네이션·신고 등 주요 조작 컨트롤은 최소 44px, 사용자 입력 텍스트는 강제 가로 넘침이 없도록 보완했습니다.
 - 개발·CI는 `requirements-dev.lock`, 런타임은 `requirements.lock`을 `--require-hashes`로 설치하도록 구분했습니다.
 - 직접 의존성 입력을 `requirements.in`, `requirements-dev.in`, 해시 잠금 산출물을 `requirements.lock`, `requirements-dev.lock`으로 관리하도록 변경했습니다.
 - 기본 고정 `SECRET_KEY`를 제거하고 개발에서는 프로세스별 임시 키, 개발 외 환경에서는 필수 환경변수를 사용하도록 변경했습니다.

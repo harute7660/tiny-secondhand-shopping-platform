@@ -58,3 +58,12 @@
 - 결정: Sites capability starter 대신 Django를 사용한다.
 - 이유: starter 인증 지침은 공개 app-owned 회원가입을 직접 구성하지 않도록 제한하지만 PDF는 누구나 가입할 수 있어야 한다고 명시한다.
 - 보안 대안: Django의 검증된 User, password hasher, session, CSRF, admin을 사용하고 별도 JWT/OAuth를 만들지 않는다.
+
+## ADR-008 - 외부 UI 프레임워크 없이 기존 Flexbox·Grid 확장
+
+- 상태: 확정
+- 결정: 새 Tailwind 런타임·CDN을 추가하지 않고 기존 semantic HTML, CSS Custom Properties, Flexbox, Grid를 확장해 `#1E3A8A` 기반 반응형 디자인을 구현한다.
+- 이유: 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구한다. 이미 완성된 Django 템플릿과 이틀 일정에서는 둘 다 회귀 범위를 키우며 요구한 디자인은 Flexbox·Grid만으로 충분하다.
+- 접근성: 키보드 focus, reduced motion, 주요 조작 컨트롤의 최소 44px 터치 영역, 1080/900/700/470/360px 경계, 긴 사용자 입력 줄바꿈을 공통 규칙으로 둔다.
+- 보안 영향: 외부 script·font·CSS CDN과 inline style을 추가하지 않아 기존 strict CSP와 공급망 경계를 유지한다.
+- 증적: `static/css/site.css`, `templates/base.html`, `docs/06_TEST_CHECKLIST.md` TEST-R009.

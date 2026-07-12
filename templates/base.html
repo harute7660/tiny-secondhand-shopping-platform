@@ -21,7 +21,7 @@
         </span>
       </a>
 
-      <nav class="primary-nav" aria-label="주요 메뉴">
+      <nav class="primary-nav{% if user.is_authenticated %} primary-nav-member{% endif %}" aria-label="주요 메뉴">
         <a href="{% url 'market:home' %}">둘러보기</a>
         <a href="{% url 'market:safety' %}">안전 가이드</a>
         {% if user.is_authenticated %}

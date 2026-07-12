@@ -1,6 +1,6 @@
 # TINY MARKET
 
-보안을 우선해 설계한 교육용 초소형 중고거래 플랫폼입니다. Django 서버 렌더링, 세션 인증, SQLite 개발 DB로 과제의 7개 필수 기능을 구현했습니다. 실제 결제, 실명 인증, 배송, 에스크로 또는 대금 정산은 제공하지 않습니다.
+보안을 우선해 설계한 교육용 초소형 중고거래 플랫폼입니다. Django 서버 렌더링, 세션 인증, SQLite 개발 DB로 과제의 7개 필수 기능을 구현했습니다. 화면은 `#1E3A8A` 기반 감청색 디자인과 CSS Flexbox·Grid를 사용해 데스크톱부터 모바일까지 반응형으로 구성했습니다. 실제 결제, 실명 인증, 배송, 에스크로 또는 대금 정산은 제공하지 않습니다.
 
 > **DEMO POINT는 과제 검증용 가상 값입니다.** 현금·예금·전자지급수단이 아니며 충전, 출금, 환전, 현금화 또는 구매자 보호 기능이 없습니다. 실제 돈이나 금융정보를 입력하지 마세요.
 
@@ -45,6 +45,7 @@ GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표�
 - SQLite 개발 DB
 - Pillow 이미지 검증·재인코딩
 - Django Template, Form, ORM, 세션 인증
+- HTML5, CSS Custom Properties, Flexbox, Grid 반응형 UI
 - Ruff, Bandit, Coverage, pip-audit
 
 ```text

@@ -125,6 +125,7 @@
 - [x] TEST-R006 가입 포인트 발행 내역은 빈 사용자명이 아니라 시스템 지급으로 표시
 - [x] TEST-R007 Report 원문·snapshot·처리 metadata는 read-only이고 forged Admin POST에도 불변
 - [~] TEST-R008 320px·200% 확대, 키보드 전용, 색 대비와 실제 스크린리더 브라우저 QA
+- [x] TEST-R009 감청색 UI 1440×1000 실화면에서 sticky header·hero·4열 Grid·문서 가로 overflow 0 확인; 1080/900/700/470/360px cascade, header·검색·CTA·상태 변경·페이지네이션·신고 컨트롤 최소 44px, 회원 nav 내부 overflow와 긴 입력 줄바꿈 정적 감사
 
 ## 명시적 N/A
 
