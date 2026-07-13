@@ -12,7 +12,7 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import Avg, OuterRef, Q, Subquery
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -21,15 +21,47 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from accounts.models import UserBlock
 
-from .forms import ListingForm, MessageForm, ReportForm, TransferForm
-from .models import Conversation, Favorite, LedgerEntry, Listing, Message, Report, Transfer
+from .forms import (
+    ListingForm,
+    MessageForm,
+    ReportForm,
+    ReviewForm,
+    SavedSearchForm,
+    TransferForm,
+)
+from .models import (
+    MAX_EXTRA_LISTING_IMAGES,
+    MAX_SAVED_SEARCHES,
+    MAX_TOTAL_LISTING_IMAGES,
+    Conversation,
+    Favorite,
+    LedgerEntry,
+    Listing,
+    ListingDefect,
+    ListingEvent,
+    ListingImage,
+    Message,
+    Notification,
+    Report,
+    ReportImageEvidence,
+    Review,
+    SavedSearch,
+    Trade,
+    Transfer,
+)
 from .services import (
     AUTOMATIC_LISTING_BLOCKED,
     AUTOMATIC_USER_SUSPENDED,
+    MAX_IMAGE_BATCH_BYTES,
+    InvalidTradeError,
     MarketServiceError,
     apply_automatic_report_threshold,
     can_users_interact,
+    cancel_trade_completion,
+    create_listing_event,
     ensure_wallet,
+    request_trade_completion,
+    respond_trade_completion,
     transfer_points,
 )
 from .storage import delete_listing_image_unless_evidence
@@ -43,6 +75,9 @@ MAX_LISTING_HISTORY_PER_ACCOUNT = 500
 LISTING_RATE_LIMIT = 10
 LISTING_RATE_WINDOW = 60 * 60
 LISTING_UPDATE_RATE_LIMIT = 30
+SAVED_SEARCH_RATE_LIMIT = 30
+NOTIFICATION_READ_RATE_LIMIT = 240
+REVIEW_RATE_LIMIT = 10
 SORT_FIELDS = {
     "newest": "-created_at",
     "oldest": "created_at",
@@ -78,6 +113,33 @@ def _invalid_request() -> HttpResponse:
     )
 
 
+def _listing_upload_error(request: HttpRequest) -> str:
+    allowed_fields = {"image", "extra_images"}
+    if any(field_name not in allowed_fields for field_name in request.FILES):
+        return "허용되지 않은 파일 입력이 포함되어 있습니다."
+    uploads = [
+        upload for field_name in allowed_fields for upload in request.FILES.getlist(field_name)
+    ]
+    if len(uploads) > MAX_TOTAL_LISTING_IMAGES:
+        return f"상품 사진은 최대 {MAX_TOTAL_LISTING_IMAGES}장까지 등록할 수 있습니다."
+    total_size = sum(max(getattr(upload, "size", 0) or 0, 0) for upload in uploads)
+    if total_size > MAX_IMAGE_BATCH_BYTES:
+        return "대표 사진을 포함한 이미지 파일 합계는 20MB 이하여야 합니다."
+    return ""
+
+
+def _cleanup_new_listing_files(field_files, listing_pk) -> None:
+    """Delete only request-created files, including names assigned before a failed SQL write."""
+    prefix = f"listings/{listing_pk}/"
+    seen = set()
+    for field_file in field_files:
+        name = getattr(field_file, "name", "") or ""
+        if not name.startswith(prefix) or name in seen:
+            continue
+        seen.add(name)
+        _delete_storage_file(field_file.storage, name)
+
+
 def _post_fields_within(request: HttpRequest, limits: dict[str, int]) -> bool:
     return all(len(request.POST.get(name, "")) <= limit for name, limit in limits.items())
 
@@ -91,7 +153,19 @@ def _parse_uuid_query(value: str):
         raise Http404 from exc
 
 
-def _capture_listing_snapshot(report: Report, listing: Listing) -> None:
+def _hash_listing_image(field_file, listing_pk):
+    digest = hashlib.sha256()
+    try:
+        with field_file.storage.open(field_file.name, "rb") as source:
+            for chunk in iter(lambda: source.read(64 * 1024), b""):
+                digest.update(chunk)
+    except (FileNotFoundError, OSError):
+        security_logger.exception("report_snapshot_image_unavailable listing=%s", listing_pk)
+        return ""
+    return digest.hexdigest()
+
+
+def _capture_listing_snapshot(report: Report, listing: Listing):
     report.listing_title_snapshot = listing.title
     report.listing_description_snapshot = listing.description
     report.listing_price_snapshot = listing.price_points
@@ -99,22 +173,34 @@ def _capture_listing_snapshot(report: Report, listing: Listing) -> None:
     report.listing_condition_snapshot = listing.condition
     report.listing_region_snapshot = listing.region
     report.listing_status_snapshot = listing.status
+    report.listing_defect_disclosure_snapshot = listing.defect_disclosure
+    report.listing_defect_details_snapshot = listing.defect_details
+    report.listing_defect_codes_snapshot = ",".join(
+        listing.defects.order_by("code").values_list("code", flat=True)
+    )
     report.listing_image_name_snapshot = listing.image.name if listing.image else ""
     report.listing_image_sha256 = ""
-    if not listing.image:
-        return
-    digest = hashlib.sha256()
-    try:
-        with listing.image.storage.open(listing.image.name, "rb") as source:
-            for chunk in iter(lambda: source.read(64 * 1024), b""):
-                digest.update(chunk)
-    except (FileNotFoundError, OSError):
-        security_logger.exception(
-            "report_snapshot_image_unavailable listing=%s",
-            listing.pk,
+    evidence = []
+    if listing.image:
+        report.listing_image_sha256 = _hash_listing_image(listing.image, listing.pk)
+        evidence.append(
+            ReportImageEvidence(
+                report=report,
+                storage_name=listing.image.name,
+                sha256=report.listing_image_sha256,
+                position=0,
+            )
         )
-        return
-    report.listing_image_sha256 = digest.hexdigest()
+    for extra in listing.extra_images.order_by("position"):
+        evidence.append(
+            ReportImageEvidence(
+                report=report,
+                storage_name=extra.image.name,
+                sha256=_hash_listing_image(extra.image, listing.pk),
+                position=extra.position,
+            )
+        )
+    return evidence
 
 
 def _listing_visible_to(user, listing: Listing) -> bool:
@@ -130,7 +216,10 @@ def _listing_visible_to(user, listing: Listing) -> bool:
 
 
 def _detail_listing(request: HttpRequest, pk) -> Listing:
-    queryset = Listing.objects.select_related("seller")
+    queryset = Listing.objects.select_related("seller").prefetch_related(
+        "extra_images",
+        "defects",
+    )
     if request.user.is_authenticated and request.user.has_perm("market.view_listing"):
         return get_object_or_404(queryset, pk=pk)
     if request.user.is_authenticated:
@@ -205,6 +294,9 @@ def home(request: HttpRequest) -> HttpResponse:
     listings = listings.order_by(order_by)
 
     page_obj = Paginator(listings, 12).get_page(request.GET.get("page"))
+    saved_search_form = SavedSearchForm(
+        initial={"query": query, "category": category, "region": region}
+    )
     return render(
         request,
         "home.html",
@@ -222,6 +314,7 @@ def home(request: HttpRequest) -> HttpResponse:
             "selected_status": status,
             "selected_region": region,
             "selected_sort": sort,
+            "saved_search_form": saved_search_form,
         },
     )
 
@@ -252,9 +345,19 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
     if request.user.is_authenticated:
         is_favorite = Favorite.objects.filter(user=request.user, listing=listing).exists()
         can_contact = can_users_interact(request.user, listing.seller, listing)
-    seller_completed_count = Listing.objects.filter(
-        seller=listing.seller, status=Listing.Status.SOLD
+    seller_completed_count = Trade.objects.filter(
+        conversation__seller=listing.seller,
+        status=Trade.Status.COMPLETED,
     ).count()
+    seller_review_summary = Review.objects.filter(
+        trade__conversation__seller=listing.seller,
+        trade__status=Trade.Status.COMPLETED,
+        direction=Review.Direction.BUYER_TO_SELLER,
+    ).aggregate(average=Avg("rating"))
+    has_active_trade = Trade.objects.filter(
+        listing=listing,
+        status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+    ).exists()
     return render(
         request,
         "market/listing_detail.html",
@@ -263,6 +366,8 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
             "is_favorite": is_favorite,
             "can_contact": can_contact,
             "seller_completed_count": seller_completed_count,
+            "seller_average_rating": seller_review_summary["average"],
+            "has_active_trade": has_active_trade,
         },
     )
 
@@ -271,6 +376,9 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
 @require_http_methods(["GET", "POST"])
 def listing_create(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
+        upload_error = _listing_upload_error(request)
+        if upload_error:
+            return HttpResponse(upload_error, status=400, content_type="text/plain; charset=utf-8")
         if not _consume_actor_limit(
             request.user,
             "listing-create",
@@ -292,27 +400,53 @@ def listing_create(request: HttpRequest) -> HttpResponse:
             return _invalid_request()
     form = ListingForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
-        with transaction.atomic():
-            # Serialize quota checks per account on databases with row locking.
-            get_user_model().objects.select_for_update().get(pk=request.user.pk)
-            current_count = (
-                Listing.objects.filter(seller=request.user)
-                .exclude(status=Listing.Status.DELETED)
-                .count()
-            )
-            history_count = Listing.objects.filter(seller=request.user).count()
-            if (
-                current_count >= MAX_LISTINGS_PER_ACCOUNT
-                or history_count >= MAX_LISTING_HISTORY_PER_ACCOUNT
-            ):
-                form.add_error(None, "계정당 보관 가능한 상품 수를 초과했습니다.")
-            else:
-                listing = form.save(commit=False)
-                listing.seller = request.user
-                listing.status = Listing.Status.ACTIVE
-                listing.save()
-                messages.success(request, "상품이 안전하게 등록되었습니다.")
-                return redirect("market:listing_detail", pk=listing.pk)
+        additions = list(form.cleaned_data.get("extra_images") or [])
+        created_field_files = []
+        listing = form.save(commit=False)
+        listing.seller = request.user
+        listing.status = Listing.Status.ACTIVE
+        if not listing.image and additions:
+            listing.image = additions.pop(0)
+        if listing.image:
+            created_field_files.append(listing.image)
+        try:
+            with transaction.atomic():
+                # Serialize quota checks per account on databases with row locking.
+                get_user_model().objects.select_for_update().get(pk=request.user.pk)
+                current_count = (
+                    Listing.objects.filter(seller=request.user)
+                    .exclude(status=Listing.Status.DELETED)
+                    .count()
+                )
+                history_count = Listing.objects.filter(seller=request.user).count()
+                if (
+                    current_count >= MAX_LISTINGS_PER_ACCOUNT
+                    or history_count >= MAX_LISTING_HISTORY_PER_ACCOUNT
+                ):
+                    form.add_error(None, "계정당 보관 가능한 상품 수를 초과했습니다.")
+                else:
+                    listing.full_clean(exclude=("seller", "status"))
+                    listing.save()
+                    ListingDefect.objects.bulk_create(
+                        [
+                            ListingDefect(listing=listing, code=code)
+                            for code in form.cleaned_data.get("defects", ())
+                        ]
+                    )
+                    for position, content in enumerate(additions, start=1):
+                        extra = ListingImage(
+                            listing=listing,
+                            image=content,
+                            position=position,
+                        )
+                        created_field_files.append(extra.image)
+                        extra.save()
+                    create_listing_event(listing, ListingEvent.Kind.NEW_MATCH)
+                    messages.success(request, "상품이 안전하게 등록되었습니다.")
+                    return redirect("market:listing_detail", pk=listing.pk)
+        except Exception:
+            _cleanup_new_listing_files(created_field_files, listing.pk)
+            raise
     return render(request, "market/listing_form.html", {"form": form, "mode": "create"})
 
 
@@ -325,7 +459,15 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
         seller=request.user,
         status__in=EDITABLE_STATUSES,
     )
+    if Trade.objects.filter(
+        listing=listing,
+        status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+    ).exists():
+        raise PermissionDenied
     if request.method == "POST":
+        upload_error = _listing_upload_error(request)
+        if upload_error:
+            return HttpResponse(upload_error, status=400, content_type="text/plain; charset=utf-8")
         if not _consume_actor_limit(
             request.user,
             "listing-update",
@@ -350,6 +492,10 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
         storage = listing.image.storage
         old_image_name = ""
         new_image_name = ""
+        created_field_files = []
+        deleted_files = []
+        additions = list(form.cleaned_data.get("extra_images") or [])
+        removal_ids = {uuid.UUID(value) for value in form.cleaned_data["remove_extra_images"]}
         try:
             with transaction.atomic():
                 locked = get_object_or_404(
@@ -359,7 +505,13 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
                 )
                 if locked.status not in EDITABLE_STATUSES:
                     raise PermissionDenied
+                if Trade.objects.filter(
+                    listing=locked,
+                    status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+                ).exists():
+                    raise PermissionDenied
                 old_image_name = locked.image.name if locked.image else ""
+                old_price = locked.price_points
                 editable_fields = (
                     "title",
                     "description",
@@ -367,29 +519,96 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
                     "category",
                     "condition",
                     "region",
+                    "defect_disclosure",
+                    "defect_details",
                 )
                 for field_name in editable_fields:
                     setattr(locked, field_name, form.cleaned_data[field_name])
                 # ClearableFileInput represents an explicit deletion as False.
                 # Delegate normalization to Django's FileField instead of ever
                 # assigning the boolean sentinel to the model descriptor.
-                Listing._meta.get_field("image").save_form_data(
-                    locked,
-                    form.cleaned_data["image"],
+                image_was_submitted = "image" in request.FILES or "image-clear" in request.POST
+                if image_was_submitted:
+                    Listing._meta.get_field("image").save_form_data(
+                        locked,
+                        form.cleaned_data["image"],
+                    )
+                primary_is_new = "image" in request.FILES
+
+                current_extras = list(
+                    ListingImage.objects.select_for_update()
+                    .filter(listing=locked)
+                    .order_by("position")
                 )
+                current_ids = {item.pk for item in current_extras}
+                if not removal_ids.issubset(current_ids):
+                    raise PermissionDenied
+                remaining_extras = []
+                for extra in current_extras:
+                    if extra.pk in removal_ids:
+                        deleted_files.append(extra.image.name)
+                        extra.delete()
+                    else:
+                        remaining_extras.append(extra)
+
+                if not locked.image:
+                    if remaining_extras:
+                        promoted = remaining_extras.pop(0)
+                        locked.image.name = promoted.image.name
+                        promoted.delete()
+                    elif additions:
+                        locked.image = additions.pop(0)
+                        primary_is_new = True
+
+                if (1 if locked.image else 0) + len(remaining_extras) + len(additions) > (
+                    MAX_TOTAL_LISTING_IMAGES
+                ):
+                    raise PermissionDenied
                 locked.full_clean(exclude=("seller", "status"))
+                if primary_is_new and locked.image:
+                    created_field_files.append(locked.image)
                 locked.save(update_fields=(*editable_fields, "image", "updated_at"))
                 new_image_name = locked.image.name if locked.image else ""
+
+                occupied_positions = {item.position for item in remaining_extras}
+                free_positions = [
+                    position
+                    for position in range(1, MAX_EXTRA_LISTING_IMAGES + 1)
+                    if position not in occupied_positions
+                ]
+                if len(additions) > len(free_positions):
+                    raise PermissionDenied
+                for position, content in zip(free_positions, additions, strict=False):
+                    extra = ListingImage(
+                        listing=locked,
+                        image=content,
+                        position=position,
+                    )
+                    created_field_files.append(extra.image)
+                    extra.save()
+
+                ListingDefect.objects.filter(listing=locked).delete()
+                ListingDefect.objects.bulk_create(
+                    [
+                        ListingDefect(listing=locked, code=code)
+                        for code in form.cleaned_data.get("defects", ())
+                    ]
+                )
                 if old_image_name and old_image_name != new_image_name:
+                    deleted_files.append(old_image_name)
+                for filename in dict.fromkeys(deleted_files):
                     transaction.on_commit(
-                        lambda name=old_image_name, backend=storage: _delete_storage_file(
-                            backend, name
-                        )
+                        lambda name=filename, backend=storage: _delete_storage_file(backend, name)
+                    )
+                if locked.price_points < old_price:
+                    create_listing_event(
+                        locked,
+                        ListingEvent.Kind.PRICE_DROP,
+                        old_price=old_price,
                     )
                 listing = locked
         except Exception:
-            if new_image_name and new_image_name != old_image_name:
-                _delete_storage_file(storage, new_image_name)
+            _cleanup_new_listing_files(created_field_files, pk)
             raise
         messages.success(request, "상품 정보가 수정되었습니다.")
         return redirect("market:listing_detail", pk=listing.pk)
@@ -408,6 +627,11 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
         pk=pk,
         seller=request.user,
     )
+    if Trade.objects.filter(
+        listing=listing,
+        status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+    ).exists():
+        raise PermissionDenied
     if request.method == "POST":
         if not _consume_actor_limit(request.user, "listing-state", 60, 60 * 60):
             return _rate_limited("상태 변경 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
@@ -419,14 +643,27 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
             )
             if listing.status in (Listing.Status.BLOCKED, Listing.Status.DELETED):
                 raise PermissionDenied
+            if Trade.objects.filter(
+                listing=listing,
+                status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+            ).exists():
+                raise PermissionDenied
             old_image_name = listing.image.name if listing.image else ""
             storage = listing.image.storage
+            extra_image_names = list(
+                ListingImage.objects.select_for_update()
+                .filter(listing=listing)
+                .values_list("image", flat=True)
+            )
+            ListingImage.objects.filter(listing=listing).delete()
             listing.status = Listing.Status.DELETED
             listing.image = ""
             listing.save(update_fields=("status", "image", "updated_at"))
-            if old_image_name:
+            for filename in dict.fromkeys([old_image_name, *extra_image_names]):
+                if not filename:
+                    continue
                 transaction.on_commit(
-                    lambda name=old_image_name, backend=storage: _delete_storage_file(backend, name)
+                    lambda name=filename, backend=storage: _delete_storage_file(backend, name)
                 )
         security_logger.info(
             "listing_soft_deleted actor=%s listing=%s", request.user.pk, listing.pk
@@ -443,9 +680,8 @@ def listing_status_update(request: HttpRequest, pk) -> HttpResponse:
         return _rate_limited("상태 변경 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
     requested_status = request.POST.get("status", "")
     allowed_transitions = {
-        Listing.Status.ACTIVE: {Listing.Status.RESERVED, Listing.Status.SOLD},
-        Listing.Status.RESERVED: {Listing.Status.ACTIVE, Listing.Status.SOLD},
-        Listing.Status.SOLD: {Listing.Status.ACTIVE},
+        Listing.Status.ACTIVE: {Listing.Status.RESERVED},
+        Listing.Status.RESERVED: {Listing.Status.ACTIVE},
     }
     with transaction.atomic():
         listing = get_object_or_404(
@@ -454,6 +690,11 @@ def listing_status_update(request: HttpRequest, pk) -> HttpResponse:
             seller=request.user,
         )
         if requested_status not in allowed_transitions.get(listing.status, set()):
+            raise PermissionDenied
+        if Trade.objects.filter(
+            listing=listing,
+            status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+        ).exists():
             raise PermissionDenied
         listing.status = requested_status
         listing.save(update_fields=("status", "updated_at"))
@@ -484,25 +725,178 @@ def listing_image(request: HttpRequest, pk) -> HttpResponse:
     return response
 
 
+@require_GET
+def listing_extra_image(request: HttpRequest, pk, image_pk) -> HttpResponse:
+    listing = _detail_listing(request, pk)
+    extra = get_object_or_404(ListingImage, pk=image_pk, listing=listing)
+    try:
+        image_file = extra.image.storage.open(extra.image.name, "rb")
+    except (FileNotFoundError, OSError) as exc:
+        raise Http404 from exc
+    response = FileResponse(image_file, content_type="image/jpeg")
+    response.headers["Content-Disposition"] = 'inline; filename="listing.jpg"'
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
 @login_required
 @require_POST
 def favorite_toggle(request: HttpRequest, pk) -> HttpResponse:
     if not _consume_actor_limit(request.user, "favorite", 120, 60 * 60):
         return _rate_limited("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
-    listing = get_object_or_404(
-        Listing,
-        pk=pk,
-        status__in=PUBLIC_STATUSES,
-        seller__is_active=True,
-        seller__is_suspended=False,
-    )
-    favorite, created = Favorite.objects.get_or_create(user=request.user, listing=listing)
-    if not created:
-        favorite.delete()
-        messages.info(request, "찜 목록에서 제거했습니다.")
-    else:
-        messages.success(request, "찜 목록에 추가했습니다.")
+    with transaction.atomic():
+        listing = get_object_or_404(
+            Listing.objects.select_for_update().select_related("seller"),
+            pk=pk,
+            status__in=PUBLIC_STATUSES,
+            seller__is_active=True,
+            seller__is_suspended=False,
+        )
+        if not can_users_interact(request.user, listing.seller, listing):
+            raise PermissionDenied
+        favorite, created = Favorite.objects.get_or_create(
+            user=request.user,
+            listing=listing,
+        )
+        if not created:
+            favorite.delete()
+            messages.info(request, "찜 목록에서 제거했습니다.")
+        else:
+            messages.success(request, "찜 목록에 추가했습니다.")
     return redirect("market:listing_detail", pk=listing.pk)
+
+
+@login_required
+@never_cache
+@require_GET
+def saved_search_list(request: HttpRequest) -> HttpResponse:
+    searches = SavedSearch.objects.filter(user=request.user).order_by("-created_at")
+    return render(
+        request,
+        "market/saved_search_list.html",
+        {"saved_searches": searches, "form": SavedSearchForm()},
+    )
+
+
+@login_required
+@require_POST
+def saved_search_create(request: HttpRequest) -> HttpResponse:
+    if not _consume_actor_limit(
+        request.user,
+        "saved-search",
+        SAVED_SEARCH_RATE_LIMIT,
+        60 * 60,
+    ):
+        return _rate_limited("저장 검색 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    if not _post_fields_within(request, {"query": 100, "category": 20, "region": 50}):
+        return _invalid_request()
+
+    form = SavedSearchForm(request.POST)
+    if not form.is_valid():
+        searches = SavedSearch.objects.filter(user=request.user).order_by("-created_at")
+        return render(
+            request,
+            "market/saved_search_list.html",
+            {"saved_searches": searches, "form": form},
+            status=400,
+        )
+
+    duplicate = False
+    quota_exceeded = False
+    try:
+        with transaction.atomic():
+            get_user_model().objects.select_for_update().get(pk=request.user.pk)
+            if SavedSearch.objects.filter(user=request.user).count() >= MAX_SAVED_SEARCHES:
+                quota_exceeded = True
+            else:
+                saved_search = form.save(commit=False)
+                saved_search.user = request.user
+                saved_search.save()
+    except IntegrityError:
+        duplicate = True
+
+    if quota_exceeded:
+        messages.error(
+            request,
+            f"관심 검색 조건은 최대 {MAX_SAVED_SEARCHES}개까지 저장할 수 있습니다.",
+        )
+    elif duplicate:
+        messages.info(request, "이미 저장한 검색 조건입니다.")
+    else:
+        messages.success(request, "관심 검색 조건을 저장했습니다. 이후 새 상품부터 알려드려요.")
+    return redirect("market:saved_search_list")
+
+
+@login_required
+@require_POST
+def saved_search_delete(request: HttpRequest, pk) -> HttpResponse:
+    if not _consume_actor_limit(
+        request.user,
+        "saved-search",
+        SAVED_SEARCH_RATE_LIMIT,
+        60 * 60,
+    ):
+        return _rate_limited("저장 검색 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    saved_search = get_object_or_404(SavedSearch, pk=pk, user=request.user)
+    saved_search.delete()
+    messages.info(request, "관심 검색 조건을 삭제했습니다.")
+    return redirect("market:saved_search_list")
+
+
+@login_required
+@never_cache
+@require_GET
+def notification_list(request: HttpRequest) -> HttpResponse:
+    notifications = (
+        Notification.objects.filter(recipient=request.user)
+        .select_related("event__listing__seller", "saved_search")
+        .order_by("-created_at")
+    )
+    page_obj = Paginator(notifications, 30).get_page(request.GET.get("page"))
+    for notification in page_obj.object_list:
+        notification.listing_visible = _listing_visible_to(
+            request.user,
+            notification.event.listing,
+        )
+    return render(
+        request,
+        "market/notification_list.html",
+        {"notifications": page_obj.object_list, "page_obj": page_obj},
+    )
+
+
+@login_required
+@require_POST
+def notification_read(request: HttpRequest, pk) -> HttpResponse:
+    if not _consume_actor_limit(
+        request.user,
+        "notification-read",
+        NOTIFICATION_READ_RATE_LIMIT,
+        60 * 60,
+    ):
+        return _rate_limited("알림 처리 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    notification = get_object_or_404(Notification, pk=pk, recipient=request.user)
+    if notification.read_at is None:
+        notification.read_at = timezone.now()
+        notification.save(update_fields=("read_at",))
+    return redirect("market:notification_list")
+
+
+@login_required
+@require_POST
+def notification_read_all(request: HttpRequest) -> HttpResponse:
+    if not _consume_actor_limit(
+        request.user,
+        "notification-read",
+        NOTIFICATION_READ_RATE_LIMIT,
+        60 * 60,
+    ):
+        return _rate_limited("알림 처리 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    Notification.objects.filter(recipient=request.user, read_at__isnull=True).update(
+        read_at=timezone.now()
+    )
+    return redirect("market:notification_list")
 
 
 @login_required
@@ -517,6 +911,8 @@ def conversation_start(request: HttpRequest, pk) -> HttpResponse:
         seller__is_active=True,
         seller__is_suspended=False,
     )
+    if Trade.objects.filter(listing=listing, status=Trade.Status.COMPLETED).exists():
+        raise PermissionDenied
     if not can_users_interact(request.user, listing.seller, listing):
         raise PermissionDenied
     conversation, _created = Conversation.objects.get_or_create(
@@ -599,6 +995,25 @@ def conversation_detail(request: HttpRequest, pk) -> HttpResponse:
         conversation.messages.select_related("sender").order_by("-created_at", "-pk")[:100]
     )
     latest_messages.reverse()
+    active_trade = (
+        Trade.objects.filter(
+            conversation=conversation,
+            status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+        )
+        .prefetch_related("reviews")
+        .order_by("-created_at")
+        .first()
+    )
+    review_direction = (
+        Review.Direction.BUYER_TO_SELLER
+        if request.user.pk == conversation.buyer_id
+        else Review.Direction.SELLER_TO_BUYER
+    )
+    has_reviewed = bool(
+        active_trade
+        and active_trade.status == Trade.Status.COMPLETED
+        and active_trade.reviews.filter(direction=review_direction).exists()
+    )
     return render(
         request,
         "market/conversation_detail.html",
@@ -612,7 +1027,145 @@ def conversation_detail(request: HttpRequest, pk) -> HttpResponse:
             "is_blocking": UserBlock.objects.filter(
                 blocker=request.user, blocked=counterpart
             ).exists(),
+            "active_trade": active_trade,
+            "has_reviewed": has_reviewed,
         },
+    )
+
+
+@login_required
+@require_POST
+def trade_request_completion(request: HttpRequest, pk) -> HttpResponse:
+    conversation = get_object_or_404(
+        Conversation,
+        pk=pk,
+        seller=request.user,
+    )
+    if not _consume_actor_limit(request.user, "trade-completion", 30, 60 * 60):
+        return _rate_limited("거래 완료 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    try:
+        request_trade_completion(request.user, conversation.pk)
+    except InvalidTradeError as exc:
+        messages.error(request, exc.messages[0])
+    else:
+        messages.success(request, "구매자에게 거래 완료 확인을 요청했습니다.")
+    return redirect("market:conversation_detail", pk=conversation.pk)
+
+
+@login_required
+@require_POST
+def trade_confirm(request: HttpRequest, pk) -> HttpResponse:
+    trade = get_object_or_404(Trade, pk=pk, conversation__buyer=request.user)
+    if not _consume_actor_limit(request.user, "trade-completion", 30, 60 * 60):
+        return _rate_limited("거래 완료 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    try:
+        respond_trade_completion(request.user, trade.pk, approve=True)
+    except InvalidTradeError as exc:
+        messages.error(request, exc.messages[0])
+    else:
+        messages.success(request, "양측 확인이 완료되었습니다. 이제 서로 후기를 남길 수 있어요.")
+    return redirect("market:conversation_detail", pk=trade.conversation_id)
+
+
+@login_required
+@require_POST
+def trade_reject(request: HttpRequest, pk) -> HttpResponse:
+    trade = get_object_or_404(Trade, pk=pk, conversation__buyer=request.user)
+    if not _consume_actor_limit(request.user, "trade-completion", 30, 60 * 60):
+        return _rate_limited("거래 완료 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    try:
+        respond_trade_completion(request.user, trade.pk, approve=False)
+    except InvalidTradeError as exc:
+        messages.error(request, exc.messages[0])
+    else:
+        messages.info(request, "거래 완료 요청을 거절했습니다.")
+    return redirect("market:conversation_detail", pk=trade.conversation_id)
+
+
+@login_required
+@require_POST
+def trade_cancel(request: HttpRequest, pk) -> HttpResponse:
+    trade = get_object_or_404(Trade, pk=pk, conversation__seller=request.user)
+    if not _consume_actor_limit(request.user, "trade-completion", 30, 60 * 60):
+        return _rate_limited("거래 완료 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+    try:
+        cancel_trade_completion(request.user, trade.pk)
+    except InvalidTradeError as exc:
+        messages.error(request, exc.messages[0])
+    else:
+        messages.info(request, "거래 완료 요청을 취소했습니다.")
+    return redirect("market:conversation_detail", pk=trade.conversation_id)
+
+
+@login_required
+@never_cache
+@require_http_methods(["GET", "POST"])
+def review_create(request: HttpRequest, pk) -> HttpResponse:
+    trade = get_object_or_404(
+        Trade.objects.select_related("conversation__buyer", "conversation__seller", "listing"),
+        Q(conversation__buyer=request.user) | Q(conversation__seller=request.user),
+        pk=pk,
+        status=Trade.Status.COMPLETED,
+    )
+    direction = (
+        Review.Direction.BUYER_TO_SELLER
+        if request.user.pk == trade.conversation.buyer_id
+        else Review.Direction.SELLER_TO_BUYER
+    )
+    if Review.objects.filter(trade=trade, direction=direction).exists():
+        messages.info(request, "이미 이 거래의 후기를 작성했습니다.")
+        return redirect("market:conversation_detail", pk=trade.conversation_id)
+    if request.method == "POST":
+        if not _consume_actor_limit(
+            request.user,
+            "review-create",
+            REVIEW_RATE_LIMIT,
+            60 * 60 * 24,
+        ):
+            return _rate_limited("후기 작성 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
+        if not _post_fields_within(request, {"rating": 2, "body": 500}):
+            return _invalid_request()
+    form = ReviewForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        duplicate = False
+        try:
+            with transaction.atomic():
+                locked_trade = get_object_or_404(
+                    Trade.objects.select_for_update().select_related("conversation"),
+                    Q(conversation__buyer=request.user) | Q(conversation__seller=request.user),
+                    pk=trade.pk,
+                    status=Trade.Status.COMPLETED,
+                )
+                review = form.save(commit=False)
+                review.trade = locked_trade
+                review.direction = direction
+                review.full_clean()
+                review.save()
+                if locked_trade.reviews.count() == 2:
+                    locked_trade.reviews.filter(
+                        visibility=Review.Visibility.PENDING,
+                    ).update(visibility=Review.Visibility.PUBLIC)
+        except IntegrityError:
+            duplicate = True
+        if duplicate:
+            messages.info(request, "이미 이 거래의 후기를 작성했습니다.")
+        else:
+            security_logger.info("review_created actor=%s trade=%s", request.user.pk, trade.pk)
+            messages.success(
+                request,
+                "거래 후기를 등록했습니다. 양쪽 후기가 모두 제출되면 함께 공개됩니다.",
+            )
+        return redirect("market:conversation_detail", pk=trade.conversation_id)
+    counterpart = (
+        trade.conversation.seller
+        if request.user.pk == trade.conversation.buyer_id
+        else trade.conversation.buyer
+    )
+    return render(
+        request,
+        "market/review_form.html",
+        {"form": form, "trade": trade, "counterpart": counterpart},
+        status=400 if request.method == "POST" else 200,
     )
 
 
@@ -745,10 +1298,13 @@ def report_create(request: HttpRequest) -> HttpResponse:
                     report.reporter = request.user
                     report.target_user = target_user
                     report.listing = target_listing
+                    image_evidence = []
                     if target_listing is not None:
-                        _capture_listing_snapshot(report, target_listing)
+                        image_evidence = _capture_listing_snapshot(report, target_listing)
                     report.full_clean()
                     report.save()
+                    if image_evidence:
+                        ReportImageEvidence.objects.bulk_create(image_evidence)
                     moderation_outcome = apply_automatic_report_threshold(report)
         except IntegrityError:
             form_error = "이미 검토 중인 신고가 있습니다."

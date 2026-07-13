@@ -3,36 +3,64 @@ import hmac
 import io
 import logging
 
-from django.conf import settings
+from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.urls import path, reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
-from .forms import ListingForm
 from .models import (
     AUTOMATIC_LISTING_BLOCK_REASON,
     Conversation,
     Favorite,
     LedgerEntry,
     Listing,
+    ListingDefect,
+    ListingEvent,
+    ListingImage,
     Message,
+    Notification,
     Report,
+    ReportImageEvidence,
+    Review,
+    SavedSearch,
+    Trade,
     Transfer,
     WalletAccount,
 )
+from .services import MAX_IMAGE_BYTES, process_listing_image
 from .storage import delete_listing_image_unless_evidence
 
 security_logger = logging.getLogger("tiny_market.security")
 
 
-class ListingAdminForm(ListingForm):
-    class Meta(ListingForm.Meta):
-        fields = ListingForm.Meta.fields
+class ListingAdminForm(forms.ModelForm):
+    class Meta:
+        model = Listing
+        fields = (
+            "title",
+            "description",
+            "price_points",
+            "category",
+            "condition",
+            "region",
+            "image",
+        )
+
+    def clean_image(self):
+        image = self.cleaned_data.get("image")
+        if isinstance(image, UploadedFile):
+            return process_listing_image(image)
+        if image is False and self.instance.pk and self.instance.extra_images.exists():
+            raise forms.ValidationError(
+                "추가 사진이 있는 상품의 대표 사진은 관리자 화면에서 삭제할 수 없습니다."
+            )
+        return image
 
 
 class ReadOnlyAdminMixin:
@@ -78,6 +106,8 @@ class ListingAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "blocked_at",
+        "defect_disclosure",
+        "defect_details",
     )
     list_select_related = ("seller", "blocked_by")
 
@@ -131,17 +161,24 @@ class ListingAdmin(admin.ModelAdmin):
 
     def delete_model(self, request, obj):
         self._require_purge_permission(request)
-        image_name = obj.image.name if obj.image else ""
+        image_names = [obj.image.name] if obj.image else []
+        image_names.extend(obj.extra_images.values_list("image", flat=True))
         storage = obj.image.storage
         super().delete_model(request, obj)
-        if image_name:
+        for image_name in image_names:
             transaction.on_commit(
                 lambda name=image_name, backend=storage: self._delete_image(backend, name)
             )
 
     def delete_queryset(self, request, queryset):
         self._require_purge_permission(request)
-        files = [(item.image.storage, item.image.name) for item in queryset if item.image]
+        files = []
+        for item in queryset.prefetch_related("extra_images"):
+            if item.image:
+                files.append((item.image.storage, item.image.name))
+            files.extend(
+                (extra.image.storage, extra.image.name) for extra in item.extra_images.all()
+            )
         super().delete_queryset(request, queryset)
         for storage, name in files:
             transaction.on_commit(
@@ -180,8 +217,81 @@ class MessageAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
         return obj.body[:60]
 
 
+@admin.register(ListingImage)
+class ListingImageAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("id", "listing", "position", "created_at")
+    search_fields = ("listing__title",)
+    raw_id_fields = ("listing",)
+    list_select_related = ("listing",)
+
+
+@admin.register(ListingDefect)
+class ListingDefectAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("listing", "code", "created_at")
+    list_filter = ("code",)
+    search_fields = ("listing__title",)
+    raw_id_fields = ("listing",)
+    list_select_related = ("listing",)
+
+
+@admin.register(SavedSearch)
+class SavedSearchAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("user", "query", "category", "region", "created_at")
+    search_fields = ("user__username", "query", "region")
+    raw_id_fields = ("user",)
+    list_select_related = ("user",)
+
+
+@admin.register(ListingEvent)
+class ListingEventAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("id", "listing", "kind", "old_price", "new_price", "processed_at")
+    list_filter = ("kind", "processed_at")
+    raw_id_fields = ("listing",)
+    list_select_related = ("listing",)
+
+
+@admin.register(Notification)
+class NotificationAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("recipient", "event", "read_at", "created_at")
+    search_fields = ("recipient__username", "event__listing__title")
+    raw_id_fields = ("recipient", "event", "saved_search")
+    list_select_related = ("recipient", "event", "saved_search")
+
+
+@admin.register(Trade)
+class TradeAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("id", "listing", "conversation", "status", "completed_at", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = (
+        "listing__title",
+        "conversation__buyer__username",
+        "conversation__seller__username",
+    )
+    raw_id_fields = ("listing", "conversation")
+    list_select_related = ("listing", "conversation")
+
+
+@admin.register(Review)
+class ReviewAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("trade", "direction", "rating", "visibility", "created_at")
+    list_filter = ("direction", "rating", "visibility", "created_at")
+    search_fields = ("body",)
+    raw_id_fields = ("trade",)
+    list_select_related = ("trade",)
+
+
+class ReportImageEvidenceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    # Evidence is deliberately not registered as a standalone admin model.
+    # Reviewers must enter through ReportAdmin so view_report is rechecked and
+    # internal storage names are never rendered in an index or change form.
+    list_display = ("report", "position")
+    raw_id_fields = ("report",)
+    list_select_related = ("report",)
+
+
 @admin.register(Report)
 class ReportAdmin(admin.ModelAdmin):
+    exclude = ("listing_image_name_snapshot", "listing_image_sha256")
     list_display = (
         "id",
         "reporter",
@@ -213,7 +323,11 @@ class ReportAdmin(admin.ModelAdmin):
         "listing_status_snapshot",
         "listing_image_name_snapshot",
         "listing_image_sha256",
+        "listing_defect_disclosure_snapshot",
+        "listing_defect_details_snapshot",
+        "listing_defect_codes_snapshot",
         "listing_image_evidence_link",
+        "listing_all_image_evidence_links",
         "status",
         "resolver",
         "created_at",
@@ -247,6 +361,11 @@ class ReportAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.evidence_image_view),
                 name="market_report_evidence_image",
             ),
+            path(
+                "<int:object_id>/evidence-images/<int:evidence_id>/",
+                self.admin_site.admin_view(self.evidence_item_view),
+                name="market_report_evidence_item",
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -259,39 +378,96 @@ class ReportAdmin(admin.ModelAdmin):
             reverse("admin:market_report_evidence_image", args=[obj.pk]),
         )
 
-    def evidence_image_view(self, request, object_id):
-        if not self.has_view_permission(request):
-            raise PermissionDenied
-        report = get_object_or_404(Report, pk=object_id)
-        if not self.has_view_permission(request, report):
-            raise PermissionDenied
-        name = report.listing_image_name_snapshot
-        expected_digest = report.listing_image_sha256
+    @admin.display(description="보존된 전체 상품 사진")
+    def listing_all_image_evidence_links(self, obj):
+        if not obj:
+            return "없음"
+        evidence_items = list(obj.image_evidence.order_by("position"))
+        if not evidence_items:
+            return "없음"
+        return format_html_join(
+            "<br>",
+            '<a href="{}">사진 {} 무결성 검증 후 보기</a>',
+            (
+                (
+                    reverse(
+                        "admin:market_report_evidence_item",
+                        args=[obj.pk, evidence.pk],
+                    ),
+                    evidence.position + 1,
+                )
+                for evidence in evidence_items
+            ),
+        )
+
+    def _verified_evidence_response(self, request, report, name, expected_digest, *, position):
         if not name or not expected_digest:
             raise Http404
         storage = Listing._meta.get_field("image").storage
         try:
             with storage.open(name, "rb") as source:
-                evidence = source.read(settings.FILE_UPLOAD_MAX_MEMORY_SIZE + 1)
+                evidence = source.read(MAX_IMAGE_BYTES + 1)
         except (FileNotFoundError, OSError) as exc:
             raise Http404 from exc
-        if len(evidence) > settings.FILE_UPLOAD_MAX_MEMORY_SIZE:
-            security_logger.warning("report_evidence_oversized report=%s", report.pk)
+        if len(evidence) > MAX_IMAGE_BYTES:
+            security_logger.warning(
+                "report_evidence_oversized report=%s position=%s",
+                report.pk,
+                position,
+            )
             raise Http404
         actual_digest = hashlib.sha256(evidence).hexdigest()
         if not hmac.compare_digest(actual_digest, expected_digest):
-            security_logger.warning("report_evidence_integrity_failed report=%s", report.pk)
+            security_logger.warning(
+                "report_evidence_integrity_failed report=%s position=%s",
+                report.pk,
+                position,
+            )
             raise Http404
         response = FileResponse(io.BytesIO(evidence), content_type="image/jpeg")
         response.headers["Content-Disposition"] = 'inline; filename="report-evidence.jpg"'
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         security_logger.info(
-            "report_evidence_viewed actor=%s report=%s",
+            "report_evidence_viewed actor=%s report=%s position=%s",
             request.user.pk,
             report.pk,
+            position,
         )
         return response
+
+    def evidence_image_view(self, request, object_id):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        report = get_object_or_404(Report, pk=object_id)
+        if not self.has_view_permission(request, report):
+            raise PermissionDenied
+        return self._verified_evidence_response(
+            request,
+            report,
+            report.listing_image_name_snapshot,
+            report.listing_image_sha256,
+            position=0,
+        )
+
+    def evidence_item_view(self, request, object_id, evidence_id):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        report = get_object_or_404(Report, pk=object_id)
+        if not self.has_view_permission(request, report):
+            raise PermissionDenied
+        evidence = get_object_or_404(
+            ReportImageEvidence,
+            pk=evidence_id,
+            report=report,
+        )
+        return self._verified_evidence_response(
+            request,
+            report,
+            evidence.storage_name,
+            evidence.sha256,
+            position=evidence.position,
+        )
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -405,7 +581,21 @@ class ReportAdmin(admin.ModelAdmin):
                 blocked_reason=AUTOMATIC_LISTING_BLOCK_REASON,
             )
             for listing in listings:
-                listing.status = Listing.Status.ACTIVE
+                pending_trade = (
+                    Trade.objects.select_for_update()
+                    .filter(listing=listing, status=Trade.Status.PENDING_BUYER)
+                    .first()
+                )
+                has_completed_trade = Trade.objects.filter(
+                    listing=listing,
+                    status=Trade.Status.COMPLETED,
+                ).exists()
+                if has_completed_trade:
+                    listing.status = Listing.Status.SOLD
+                elif pending_trade:
+                    listing.status = Listing.Status.RESERVED
+                else:
+                    listing.status = Listing.Status.ACTIVE
                 listing.blocked_by = None
                 listing.blocked_reason = ""
                 listing.blocked_at = None

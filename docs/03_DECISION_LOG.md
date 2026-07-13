@@ -145,3 +145,36 @@
 - 후보와 선행조건: 자차·대중교통을 한 공급자에서 제공하는 TMAP API를 후보로 검토했지만 확정하지 않았다. 구현 전 API 키의 서버 비밀 관리, HTTPS와 동작 시점의 명시적 동의, 대화 참여자 객체 인가, 목적·보존기간·삭제 방법 고지, 원좌표 비저장 또는 짧은 TTL, 로그 마스킹, 철회·만료·재사용 방지, 공급자 약관·할당량과 국내 위치정보 관련 법률 검토가 필요하다.
 - 구현 전환 조건: 공급자와 비용·할당량을 확정하고 개인정보·위치정보 처리방침과 테스트 계정을 준비한 뒤 별도 위협 모델·마이그레이션·인가·rate limit·보존 삭제 테스트를 통과할 때만 `geolocation`과 외부 `connect-src`를 필요한 거래 약속 화면에 한정해 연다.
 - 참고: [TMAP API](https://tmapapi.tmapmobility.com/), [TMAP 대중교통 API](https://transit.tmapmobility.com/docs/routes), [W3C Geolocation](https://www.w3.org/TR/geolocation/).
+
+## ADR-017 - 상호 확인된 거래만 쌍방 후기를 허용하고 두 후기를 동시에 공개
+
+- 상태: 확정
+- 결정: 판매자가 임의의 구매자 ID를 제출하는 대신 자신이 참여한 상품 대화에서 거래 완료를 요청하고, 그 대화의 구매자가 확인한 `Trade.COMPLETED`만 후기의 권한 근거로 사용한다. 후기 방향은 로그인 사용자와 거래 참여자로 서버가 결정하며, 같은 거래·방향에는 한 건만 허용한다.
+- 공개 정책: 첫 번째 후기는 `PENDING`으로 보관해 상대에게 내용을 공개하지 않는다. 양쪽 후기가 모두 작성되면 같은 transaction에서 둘을 `PUBLIC`으로 바꿔 동시에 공개한다. 공개 프로필은 공개 후기의 별점·본문·작성일·작성자 역할만 primitive 값으로 전달하고 상품명·가격·지역·거래 UUID는 노출하지 않는다.
+- 이유: 기존 `Listing.SOLD`만으로는 실제 구매자를 식별할 수 없고 판매자가 단독으로 상태를 바꿀 수 있어 거래하지 않은 사용자의 후기, 구매자 위조와 보복성 맞후기를 막을 수 없다. 대화로 구매자를 고정한 상호 확인과 blind publication이 권한·공정성 경계를 함께 만든다.
+- 통제: 완료 요청·응답은 `transaction.atomic()`과 상품·거래 행 잠금을 사용하고, 상품 및 대화별 진행/완료 거래의 조건부 UNIQUE와 상태별 timestamp CHECK를 둔다. `SOLD` 전환은 구매자 확인 서비스에서만 수행하며 일반 상태 변경은 `ACTIVE`↔`RESERVED`로 제한한다. 요청 뒤 판매자가 구매자를 차단해 확인·후기를 억압할 수 없도록 완료 판정에서는 사후 `UserBlock`을 권한 근거로 쓰지 않되, 정지 계정과 `BLOCKED`·`DELETED` 상품은 거절한다. 진행·완료 거래가 있는 상품은 수정·삭제·재판매·새 대화를 서버에서 차단한다.
+- 검토한 대안: 판매자의 단독 `SOLD` 변경, POST로 전달된 buyer ID 신뢰, 첫 후기 즉시 공개는 각각 거래 위조·IDOR·보복 후기를 만들기 때문에 채택하지 않았다. 실결제나 대면 증명을 수집하는 방식은 개인정보와 운영 복잡도가 과도해 이번 범위에서 제외했다.
+- 잔여 위험: 판매자와 구매자가 공모하면 실제 물품 전달 없이 상호 완료할 수 있고 물리적 거래 분쟁까지 시스템이 증명하지는 못한다. 운영에서는 이상 후기 패턴 탐지, 이의제기·숨김 절차와 PostgreSQL 기반 동시성 재검증이 필요하다.
+- 증적: `market/models.py`, `market/services.py`, `market/views.py`, `market/forms.py`, `market/test_trade_reviews.py`의 상호 완료·거절/취소 복구·IDOR·legacy SOLD·완료 후 변경 차단·사후 차단 악용·blind 공개·중복·PII·XSS 회귀.
+
+## ADR-018 - 관심 검색과 가격 하락 알림은 구조화 이벤트에서 멱등 fan-out
+
+- 상태: 확정
+- 결정: 관심 검색 조건은 정규화한 검색어·카테고리·지역과 SHA-256 fingerprint로 저장한다. 새 상품 등록은 `NEW_MATCH`, 찜한 상품의 실제 가격 인하는 잠근 수정 전·후 가격으로 `PRICE_DROP` `ListingEvent`를 생성하고, 사용자별 `Notification`으로 fan-out한다.
+- 이유: view에서 임의 문자열 알림을 즉시 보내면 rollback된 상품의 유령 알림, 여러 조건에 매칭된 중복, 가격 인상·변조된 이전 가격, 이벤트 뒤 추가한 구독의 소급 알림이 발생할 수 있다. 이벤트 사실과 사용자 전달 상태를 분리하면 재시도·감사·중복 방지가 가능하다.
+- 통제: 이벤트 형태 CHECK와 상품별 `NEW_MATCH` UNIQUE, `(recipient, event)` UNIQUE를 두고 `select_for_update()`로 `processed_at`을 직렬화한다. 이벤트 시각 이전에 존재한 저장 검색·찜만 대상으로 하며 판매자 자신, 양방향 차단 사용자, 비활성·정지 계정을 제외한다. 여러 검색 조건은 사용자별 한 건으로 합치고 200건 단위 iterator·bulk insert를 사용한다. fan-out은 상품 transaction의 `on_commit` 뒤 실행하며 실패 시 사용자 상품 변경은 유지하고 `processed_at=NULL`과 고정 보안 로그를 남겨 멱등 재실행할 수 있게 한다.
+- 표시·인가: 저장 검색 삭제, 개별 읽음과 전체 읽음은 로그인 사용자 소유 범위로만 조회한다. 알림 열람 시 현재 상품 공개 가능성을 다시 평가하고 비공개 상품은 제목·가격·이벤트 종류 대신 일반 안내만 보여 준다. 검색어·상품명은 템플릿 autoescape 경계를 유지한다.
+- 검토한 대안: Django signal에서 동기 발송하거나 알림 본문 전체를 저장하는 방식은 transaction 경계와 현재 공개 상태를 놓치기 쉬워 채택하지 않았다. 현재 규모에서 외부 queue를 새로 도입하는 대신 DB 멱등성과 제한된 batch로 최소 구현했다.
+- 잔여 위험: 현재 매칭은 웹 프로세스에서 저장 검색을 선형 탐색하므로 사용자가 늘면 지연과 자원고갈 위험이 있다. 미처리 이벤트를 제한 수만 재실행하는 `process_listing_events` 명령은 제공하지만 자동 worker가 아니므로, 운영 전 PostgreSQL·작업 queue·backoff/지연 지표·알림 보존기간을 추가해야 한다.
+- 증적: `market/models.py`, `market/services.py`, `market/views.py`, `market/test_saved_search_notifications.py`의 정규화 중복·20개 quota·소유자 IDOR·시각 경계·사용자별 중복 제거·잠긴 가격 snapshot·차단/정지 제외·비공개 metadata·XSS·멱등·`on_commit` 회귀.
+
+## ADR-019 - 대표 사진 1장과 추가 4장, 하자 허용목록, 신고 시 다중 증거 snapshot
+
+- 상태: 확정
+- 결정: 기존 `Listing.image`를 대표 사진으로 유지하고 `ListingImage`에 위치 1~4의 추가 사진을 두어 총 5장까지 순서를 보존한다. 하자는 `NONE_KNOWN`·`PRESENT`·`UNKNOWN` 공개 상태와 8개 `ListingDefect.Code` 허용목록으로 저장하며 `OTHER`는 상세 설명을 요구한다. 상품 신고 시 대표·추가 사진 각각의 내부 저장명과 SHA-256, 하자 상태·코드·설명을 `Report`와 `ReportImageEvidence`에 snapshot한다.
+- 이유: 대표 사진 한 장만으로는 상품 상태를 충분히 설명하기 어렵고 자유입력 하자 코드는 위조·불일치가 쉽다. 반대로 사진을 단순 공개 media URL로 늘리면 IDOR·저장 경로 노출·대용량 처리·삭제 뒤 신고 증거 소실이라는 공격면이 커지므로 사진 수명주기와 증거 경계를 함께 설계해야 한다.
+- 통제: 요청의 모든 파일 필드를 sanitizer 전에 허용목록 검사하고 대표를 포함해 최대 5장·합계 20MB를 제한한다. 각 파일은 기존 JPEG/PNG/WebP·5MB·12MP·재인코딩 검사를 거친다. 수정 폼의 삭제 ID는 현재 상품의 선택지로만 만들고 transaction 안에서 잠근 자식 집합을 다시 확인하며, 대표 삭제 시 첫 추가 사진을 승격한다. DB 실패 뒤 요청에서 새로 쓴 `FieldFile`만 정리하고 기존 파일 삭제는 commit 뒤 수행한다. 추가 사진 route는 공개 가능한 부모와 `(listing, image_pk)`를 함께 조회하고 `private, no-store`·`nosniff`를 적용한다.
+- 증거 통제: 신고 증거 파일은 상품 삭제 뒤에도 참조 여부를 확인해 보존한다. 관리자 다중 증거 route는 독립 목록으로 등록하지 않고 `ReportAdmin`의 조회 권한을 다시 검사하며 `(report, evidence_id)`로 자식을 한정한다. 파일은 5MB+1byte만 읽고 초과를 거절한 뒤 `hmac.compare_digest()`로 snapshot digest를 검증하며 내부 저장명을 HTML에 노출하지 않는다.
+- 검토한 대안: 다중 `<input>` 값을 그대로 모델에 저장하거나 자유 문자열 하자 태그를 허용하는 방식은 개수·형식·도메인 불변식을 보장하지 못해 거절했다. 외부 공개 object URL은 현재 private media 정책과 맞지 않아 보호 application route를 확장했다.
+- 잔여 위험: reverse proxy가 애플리케이션보다 먼저 전체 body를 수신할 수 있으므로 운영 body limit도 필요하다. object storage rollback 정리는 best-effort이며 주기적 orphan 대사가 필요하고, 신고 증거의 법적 보존기간·삭제 승인·접근 감사 정책은 운영자가 확정해야 한다.
+- 증적: `market/models.py`, `market/forms.py`, `market/views.py`, `market/admin.py`, `market/storage.py`, `market/test_multi_image_defects.py`, `market/test_admin_image_evidence.py`의 5장·합계 제한·예상 밖 field·child IDOR·stale 삭제 ID·대표 승격·하자 허용목록·XSS·다중 snapshot·삭제 뒤 보존·orphan 정리·관리자 report scope 회귀.

@@ -17,14 +17,22 @@ from .models import (
     AUTOMATIC_REPORT_THRESHOLD,
     AUTOMATIC_USER_SUSPENSION_REASON,
     MAX_TRANSFER_POINTS,
+    Conversation,
+    Favorite,
     LedgerEntry,
     Listing,
+    ListingEvent,
+    Notification,
     Report,
+    SavedSearch,
+    Trade,
     Transfer,
     WalletAccount,
+    normalize_saved_search_text,
 )
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_BATCH_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 12_000_000
 ALLOWED_IMAGE_MIME_TYPES = {
     "JPEG": {"image/jpeg", "image/pjpeg"},
@@ -58,6 +66,10 @@ class IdempotencyConflictError(MarketServiceError):
 
 
 class InvalidImageError(MarketServiceError):
+    pass
+
+
+class InvalidTradeError(MarketServiceError):
     pass
 
 
@@ -283,6 +295,310 @@ def can_users_interact(user_a, user_b, listing=None):
     if listing.status in {Listing.Status.BLOCKED, Listing.Status.DELETED}:
         return False
     return listing.seller_id in {user_a.pk, user_b.pk}
+
+
+def _saved_search_matches_listing(saved_search, listing):
+    query = normalize_saved_search_text(saved_search.query).casefold()
+    region = normalize_saved_search_text(saved_search.region).casefold()
+    haystack = " ".join(
+        normalize_saved_search_text(value).casefold()
+        for value in (listing.title, listing.description, listing.region)
+    )
+    return (
+        (not query or query in haystack)
+        and (not saved_search.category or saved_search.category == listing.category)
+        and (not region or region in normalize_saved_search_text(listing.region).casefold())
+    )
+
+
+def dispatch_listing_event(event_id):
+    """Create structured, idempotent notifications inside an atomic boundary."""
+    with transaction.atomic():
+        event = (
+            ListingEvent.objects.select_for_update()
+            .select_related("listing__seller")
+            .get(pk=event_id)
+        )
+        if event.processed_at is not None:
+            return event.notifications.count()
+        listing = event.listing
+        if listing.status not in {
+            Listing.Status.ACTIVE,
+            Listing.Status.RESERVED,
+        } or not _user_is_available(listing.seller):
+            event.processed_at = timezone.now()
+            event.save(update_fields=("processed_at",))
+            return 0
+
+        user_block_model = apps.get_model("accounts", "UserBlock")
+        blocked_pairs = user_block_model.objects.filter(
+            Q(blocker_id=listing.seller_id) | Q(blocked_id=listing.seller_id)
+        ).values_list("blocker_id", "blocked_id")
+        blocked_user_ids = {
+            blocked_id if blocker_id == listing.seller_id else blocker_id
+            for blocker_id, blocked_id in blocked_pairs
+        }
+        recipients = {}
+        if event.kind == ListingEvent.Kind.NEW_MATCH:
+            searches = (
+                SavedSearch.objects.filter(
+                    created_at__lte=event.created_at,
+                    user__is_active=True,
+                    user__is_suspended=False,
+                )
+                .exclude(user_id=listing.seller_id)
+                .exclude(user_id__in=blocked_user_ids)
+                .order_by("user_id", "created_at", "pk")
+            )
+            for saved_search in searches.iterator(chunk_size=200):
+                if saved_search.user_id in recipients:
+                    continue
+                if not _saved_search_matches_listing(saved_search, listing):
+                    continue
+                recipients[saved_search.user_id] = saved_search
+        else:
+            favorites = (
+                Favorite.objects.filter(
+                    listing=listing,
+                    created_at__lte=event.created_at,
+                    user__is_active=True,
+                    user__is_suspended=False,
+                )
+                .exclude(user_id=listing.seller_id)
+                .exclude(user_id__in=blocked_user_ids)
+                .order_by("user_id")
+            )
+            for favorite in favorites.iterator(chunk_size=200):
+                recipients[favorite.user_id] = None
+
+        Notification.objects.bulk_create(
+            [
+                Notification(
+                    recipient_id=recipient_id,
+                    event=event,
+                    saved_search=saved_search,
+                )
+                for recipient_id, saved_search in recipients.items()
+            ],
+            batch_size=200,
+            ignore_conflicts=True,
+        )
+        created_count = event.notifications.count()
+        event.processed_at = timezone.now()
+        event.save(update_fields=("processed_at",))
+        security_logger.info(
+            "listing_event_dispatched event=%s notifications=%s",
+            event.pk,
+            created_count,
+        )
+        return created_count
+
+
+def _dispatch_listing_event_safely(event_id):
+    """Keep notification fan-out failures from rolling back a valid listing write."""
+    try:
+        return dispatch_listing_event(event_id)
+    except Exception:
+        security_logger.exception("listing_event_dispatch_failed event=%s", event_id)
+        return 0
+
+
+def create_listing_event(listing, kind, *, old_price=None):
+    if kind == ListingEvent.Kind.NEW_MATCH:
+        event = ListingEvent(
+            listing=listing,
+            kind=kind,
+            old_price=None,
+            new_price=listing.price_points,
+        )
+    elif kind == ListingEvent.Kind.PRICE_DROP and old_price is not None:
+        event = ListingEvent(
+            listing=listing,
+            kind=kind,
+            old_price=old_price,
+            new_price=listing.price_points,
+        )
+    else:
+        raise MarketServiceError("유효하지 않은 상품 이벤트입니다.")
+    event.full_clean()
+    event.save()
+    # Fan-out starts only after the surrounding listing transaction commits.
+    # A failed callback leaves processed_at NULL so a worker can retry it.
+    transaction.on_commit(lambda event_id=event.pk: _dispatch_listing_event_safely(event_id))
+    return event
+
+
+def request_trade_completion(actor, conversation_id):
+    """Let the seller select the buyer bound to one protected conversation."""
+    current_actor = _get_current_available_user(actor)
+    with transaction.atomic():
+        conversation = get_user_conversation_for_trade(
+            conversation_id,
+            seller_id=current_actor.pk,
+        )
+        listing = (
+            Listing.objects.select_for_update()
+            .select_related("seller")
+            .get(pk=conversation.listing_id)
+        )
+        if listing.status not in {
+            Listing.Status.ACTIVE,
+            Listing.Status.RESERVED,
+        }:
+            raise InvalidTradeError("현재 상태에서는 거래 완료를 요청할 수 없습니다.")
+        if not can_users_interact(current_actor, conversation.buyer, listing):
+            raise InvalidTradeError("현재 상대방과 거래를 확정할 수 없습니다.")
+
+        existing = Trade.objects.filter(
+            listing=listing,
+            status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+        ).first()
+        if existing:
+            if (
+                existing.conversation_id == conversation.pk
+                and existing.status == Trade.Status.PENDING_BUYER
+            ):
+                return existing
+            raise InvalidTradeError("이미 다른 거래 완료 절차가 진행 중입니다.")
+
+        now = timezone.now()
+        trade = Trade(
+            listing=listing,
+            conversation=conversation,
+            status=Trade.Status.PENDING_BUYER,
+            initial_listing_status=listing.status,
+            seller_confirmed_at=now,
+        )
+        trade.full_clean()
+        trade.save()
+        if listing.status == Listing.Status.ACTIVE:
+            listing.status = Listing.Status.RESERVED
+            listing.save(update_fields=("status", "updated_at"))
+        security_logger.info(
+            "trade_completion_requested actor=%s trade=%s",
+            current_actor.pk,
+            trade.pk,
+        )
+        return trade
+
+
+def get_user_conversation_for_trade(conversation_id, *, seller_id=None, buyer_id=None):
+    queryset = Conversation.objects.select_related("listing", "buyer", "seller")
+    if seller_id is not None:
+        queryset = queryset.filter(seller_id=seller_id)
+    if buyer_id is not None:
+        queryset = queryset.filter(buyer_id=buyer_id)
+    try:
+        return queryset.get(pk=conversation_id)
+    except Conversation.DoesNotExist as exc:
+        raise InvalidTradeError("거래 대화를 찾을 수 없습니다.") from exc
+
+
+def _restore_listing_after_unfinished_trade(listing, trade):
+    if listing.status != Listing.Status.RESERVED:
+        return
+    if trade.initial_listing_status in {
+        Listing.Status.ACTIVE,
+        Listing.Status.RESERVED,
+    }:
+        listing.status = trade.initial_listing_status
+        listing.save(update_fields=("status", "updated_at"))
+
+
+def _can_finalize_trade(buyer, seller, listing):
+    """A post-request user block cannot be used to suppress completion or reviews."""
+    return bool(
+        _user_is_available(buyer)
+        and _user_is_available(seller)
+        and listing.status not in {Listing.Status.BLOCKED, Listing.Status.DELETED}
+        and listing.seller_id == seller.pk
+    )
+
+
+def respond_trade_completion(actor, trade_id, *, approve):
+    current_actor = _get_current_available_user(actor)
+    trade_ref = (
+        Trade.objects.filter(pk=trade_id, conversation__buyer_id=current_actor.pk)
+        .values("listing_id")
+        .first()
+    )
+    if trade_ref is None:
+        raise InvalidTradeError("거래 완료 요청을 찾을 수 없습니다.")
+
+    with transaction.atomic():
+        listing = (
+            Listing.objects.select_for_update()
+            .select_related("seller")
+            .get(pk=trade_ref["listing_id"])
+        )
+        trade = (
+            Trade.objects.select_for_update()
+            .select_related("conversation__buyer", "conversation__seller")
+            .get(pk=trade_id, conversation__buyer_id=current_actor.pk)
+        )
+        if trade.status != Trade.Status.PENDING_BUYER:
+            raise InvalidTradeError("이미 처리된 거래 완료 요청입니다.")
+        now = timezone.now()
+        trade.buyer_responded_at = now
+        if approve:
+            if not _can_finalize_trade(
+                current_actor,
+                trade.conversation.seller,
+                listing,
+            ):
+                raise InvalidTradeError("현재 거래를 완료할 수 없습니다.")
+            trade.status = Trade.Status.COMPLETED
+            trade.completed_at = now
+            listing.status = Listing.Status.SOLD
+            listing.save(update_fields=("status", "updated_at"))
+            event_name = "trade_completion_confirmed"
+        else:
+            trade.status = Trade.Status.REJECTED
+            trade.closed_at = now
+            _restore_listing_after_unfinished_trade(listing, trade)
+            event_name = "trade_completion_rejected"
+        trade.full_clean()
+        trade.save(
+            update_fields=(
+                "status",
+                "buyer_responded_at",
+                "completed_at",
+                "closed_at",
+                "updated_at",
+            )
+        )
+        security_logger.info("%s actor=%s trade=%s", event_name, current_actor.pk, trade.pk)
+        return trade
+
+
+def cancel_trade_completion(actor, trade_id):
+    current_actor = _get_current_available_user(actor)
+    trade_ref = (
+        Trade.objects.filter(pk=trade_id, conversation__seller_id=current_actor.pk)
+        .values("listing_id")
+        .first()
+    )
+    if trade_ref is None:
+        raise InvalidTradeError("거래 완료 요청을 찾을 수 없습니다.")
+    with transaction.atomic():
+        listing = Listing.objects.select_for_update().get(pk=trade_ref["listing_id"])
+        trade = Trade.objects.select_for_update().get(
+            pk=trade_id,
+            conversation__seller_id=current_actor.pk,
+        )
+        if trade.status != Trade.Status.PENDING_BUYER:
+            raise InvalidTradeError("이미 처리된 거래 완료 요청입니다.")
+        trade.status = Trade.Status.CANCELLED
+        trade.closed_at = timezone.now()
+        _restore_listing_after_unfinished_trade(listing, trade)
+        trade.full_clean()
+        trade.save(update_fields=("status", "closed_at", "updated_at"))
+        security_logger.info(
+            "trade_completion_cancelled actor=%s trade=%s",
+            current_actor.pk,
+            trade.pk,
+        )
+        return trade
 
 
 def apply_automatic_report_threshold(report):

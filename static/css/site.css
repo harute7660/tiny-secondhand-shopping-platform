@@ -4436,6 +4436,361 @@ h3 {
   }
 }
 
+/* Secure marketplace feature surfaces: monochrome outside upload controls. */
+.saved-search-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0 30px;
+  padding: 14px 16px;
+  color: #171717;
+  background: #f5f5f5;
+  border: 1px solid #d7d7d7;
+  border-radius: 14px;
+}
+
+.saved-search-bar p,
+.saved-search-bar form {
+  margin: 0;
+}
+
+.saved-search-bar a {
+  color: #111111;
+  font-weight: 800;
+  text-underline-offset: 3px;
+}
+
+.detail-gallery,
+.existing-extra-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.detail-gallery img,
+.existing-extra-gallery img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: #eeeeee;
+  border: 1px solid #c9c9c9;
+  border-radius: 10px;
+}
+
+.defect-summary {
+  margin-top: 22px;
+  padding: 18px;
+  color: #111111;
+  background: #f7f7f7;
+  border: 1px solid #d5d5d5;
+  border-radius: 14px;
+}
+
+.defect-summary h2,
+.trade-confirm-card h2,
+.profile-review-section h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.defect-summary p,
+.defect-summary ul {
+  margin: 10px 0 0;
+}
+
+.defect-summary ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0;
+  list-style: none;
+}
+
+.defect-summary li,
+.defect-disclosure,
+.review-complete-label {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 9px;
+  color: #ffffff;
+  background: #111111;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.choice-fieldset,
+.plain-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice-fieldset legend,
+.review-form legend {
+  margin-bottom: 10px;
+  color: #111111;
+  font-weight: 850;
+}
+
+.choice-fieldset > div:not(.existing-extra-gallery),
+.review-form .field-group ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.choice-fieldset li label,
+.review-form li label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 9px 11px;
+  color: #181818;
+  background: #ffffff;
+  border: 1px solid #c9c9c9;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.choice-fieldset input,
+.review-form input[type="radio"] {
+  width: 19px;
+  height: 19px;
+  margin: 0;
+  accent-color: #111111;
+}
+
+.trade-confirm-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin: 16px 18px;
+  padding: 18px;
+  color: #111111;
+  background: #ffffff;
+  border: 1px solid #cfcfcf;
+  border-radius: 14px;
+}
+
+.trade-confirm-card small {
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.trade-confirm-card p {
+  margin: 7px 0 0;
+  color: #555555;
+}
+
+.trade-confirm-card form {
+  margin: 0;
+}
+
+.trade-confirm-actions,
+.notification-tools,
+.notification-actions,
+.saved-search-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.trade-state {
+  font-weight: 800;
+}
+
+.trade-state-complete {
+  color: #111111 !important;
+}
+
+.feature-page-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
+  align-items: start;
+  gap: 24px;
+  padding-block: 48px 78px;
+}
+
+.saved-search-list,
+.notification-list,
+.profile-review-list {
+  display: grid;
+  gap: 11px;
+}
+
+.saved-search-list > article,
+.notification-item,
+.profile-review-list > article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  color: #111111;
+  background: #ffffff;
+  border: 1px solid #d2d2d2;
+  border-radius: 12px;
+}
+
+.saved-search-list strong,
+.notification-item h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.saved-search-list p,
+.notification-item p,
+.saved-search-list time,
+.notification-item time {
+  margin: 5px 0 0;
+  color: #555555;
+  font-size: 0.8rem;
+}
+
+.saved-search-actions form,
+.notification-actions form,
+.notification-tools form {
+  margin: 0;
+}
+
+.saved-search-actions a,
+.notification-actions a,
+.saved-search-actions button,
+.notification-actions button {
+  min-height: 40px;
+  padding: 8px 10px;
+  color: #111111;
+  background: #ffffff;
+  border: 1px solid #a9a9a9;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.notification-shell {
+  padding-block: 48px 78px;
+}
+
+.notification-item {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.notification-item.is-unread {
+  border-color: #111111;
+  box-shadow: inset 4px 0 0 #111111;
+}
+
+.notification-kind {
+  padding: 7px 8px;
+  color: #ffffff;
+  background: #111111;
+  border-radius: 7px;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.compact-empty {
+  padding-block: 36px;
+}
+
+.profile-review-section {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid #d4d4d4;
+}
+
+.profile-review-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.profile-review-heading p {
+  margin: 5px 0 0;
+  color: #555555;
+}
+
+.profile-review-list > article {
+  display: block;
+}
+
+.profile-review-list span {
+  font-weight: 900;
+}
+
+.profile-review-list p {
+  margin: 9px 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-review-list small {
+  color: #666666;
+}
+
+@media (max-width: 900px) {
+  .feature-page-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trade-confirm-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .notification-item,
+  .saved-search-list > article {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-kind {
+    width: fit-content;
+  }
+
+  .profile-review-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 470px) {
+  .detail-gallery,
+  .existing-extra-gallery,
+  .choice-fieldset > div:not(.existing-extra-gallery),
+  .review-form .field-group ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .saved-search-bar,
+  .trade-confirm-actions,
+  .notification-tools,
+  .notification-actions,
+  .saved-search-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .saved-search-bar .button,
+  .trade-confirm-actions .button,
+  .notification-tools .button {
+    width: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

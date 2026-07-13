@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Avg, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -21,6 +21,8 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+
+from market.models import Review, Trade
 
 from .forms import GENERIC_LOGIN_ERROR, LoginForm, ProfileForm, SignupForm
 from .models import LoginAttempt, User
@@ -505,7 +507,41 @@ def public_profile_view(request, username):
         "username": profile_user.username,
         "bio": profile_user.bio,
     }
-    return render(request, "accounts/public_profile.html", {"profile": profile})
+    received_reviews = Review.objects.filter(
+        trade__status=Trade.Status.COMPLETED,
+        visibility=Review.Visibility.PUBLIC,
+    ).filter(
+        Q(
+            direction=Review.Direction.BUYER_TO_SELLER,
+            trade__conversation__seller_id=profile_user.pk,
+        )
+        | Q(
+            direction=Review.Direction.SELLER_TO_BUYER,
+            trade__conversation__buyer_id=profile_user.pk,
+        )
+    )
+    review_summary = received_reviews.aggregate(average=Avg("rating"))
+    reviews = [
+        {
+            "rating": review.rating,
+            "body": review.body,
+            "created_at": review.created_at,
+            "writer_role": (
+                "구매자" if review.direction == Review.Direction.BUYER_TO_SELLER else "판매자"
+            ),
+        }
+        for review in received_reviews.only("rating", "body", "created_at", "direction")[:20]
+    ]
+    return render(
+        request,
+        "accounts/public_profile.html",
+        {
+            "profile": profile,
+            "reviews": reviews,
+            "review_count": received_reviews.count(),
+            "review_average": review_summary["average"],
+        },
+    )
 
 
 @login_required

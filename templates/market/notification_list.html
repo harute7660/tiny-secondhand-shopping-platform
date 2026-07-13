@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}관심·가격 알림 · TINY MARKET{% endblock %}
+{% block body_class %}form-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-compact"><div class="shell"><nav class="breadcrumbs" aria-label="현재 위치"><a href="{% url 'market:home' %}">홈</a><span aria-hidden="true">/</span><span aria-current="page">관심·알림</span></nav><span class="eyebrow eyebrow-light">MARKET ALERTS</span><h1>새 상품과 가격 변화를 모았어요.</h1><p>찜한 상품의 실제 가격 하락과 저장 이후의 관심 검색 일치만 표시합니다.</p></div></section>
+
+<section class="shell notification-shell">
+  <div class="section-heading-row"><div><h2>내 알림</h2><p>알림 문구 대신 서버가 기록한 상품 이벤트를 표시합니다.</p></div><div class="notification-tools"><a class="button button-outline" href="{% url 'market:saved_search_list' %}">관심 검색 관리</a><form method="post" action="{% url 'market:notification_read_all' %}">{% csrf_token %}<button class="button button-quiet" type="submit">모두 읽음</button></form></div></div>
+  {% if notifications %}
+    <div class="notification-list">
+      {% for notification in notifications %}
+        <article class="notification-item{% if not notification.read_at %} is-unread{% endif %}">
+          <span class="notification-kind">{% if notification.listing_visible %}{% if notification.event.kind == 'PRICE_DROP' %}PRICE DROP{% else %}NEW MATCH{% endif %}{% else %}PRIVATE{% endif %}</span>
+          <div>
+            {% if notification.listing_visible %}
+              <h3>{{ notification.event.listing.title }}</h3>
+              {% if notification.event.kind == 'PRICE_DROP' %}<p>{{ notification.event.old_price }} → <strong>{{ notification.event.new_price }} 포인트</strong></p>{% elif notification.saved_search %}<p>저장 검색 {% if notification.saved_search.query %}‘{{ notification.saved_search.query }}’{% endif %} 조건과 일치합니다.</p>{% else %}<p>저장한 관심 조건과 일치하는 새 상품입니다.</p>{% endif %}
+            {% else %}
+              <h3>현재 볼 수 없는 상품</h3><p>차단·삭제 또는 판매자 상태 변경으로 알림 상세 정보를 숨겼습니다.</p>
+            {% endif %}
+            <time datetime="{{ notification.created_at|date:'c' }}">{{ notification.created_at|date:"Y.m.d H:i" }}</time>
+          </div>
+          <div class="notification-actions">{% if notification.listing_visible %}<a href="{% url 'market:listing_detail' notification.event.listing.pk %}">상품 보기</a>{% endif %}{% if not notification.read_at %}<form method="post" action="{% url 'market:notification_read' notification.pk %}">{% csrf_token %}<button type="submit">읽음</button></form>{% endif %}</div>
+        </article>
+      {% endfor %}
+    </div>
+    {% if page_obj.has_other_pages %}<nav class="pagination" aria-label="알림 페이지">{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">이전</a>{% else %}<span class="disabled">이전</span>{% endif %}<span class="page-current"><strong>{{ page_obj.number }}</strong> / {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">다음</a>{% else %}<span class="disabled">다음</span>{% endif %}</nav>{% endif %}
+  {% else %}<div class="empty-state"><h3>아직 알림이 없습니다.</h3><p>상품을 찜하거나 관심 검색을 저장하면 이후 변화를 알려드려요.</p><a class="button button-primary" href="{% url 'market:home' %}">상품 둘러보기</a></div>{% endif %}
+</section>
+{% endblock %}

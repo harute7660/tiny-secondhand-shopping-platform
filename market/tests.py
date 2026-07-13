@@ -98,7 +98,7 @@ class ListingSecurityTests(MarketTestCase):
         response = self.client.get(reverse("market:listing_create"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "upload-field", count=1)
+        self.assertContains(response, "upload-field", count=2)
         self.assertContains(
             response,
             'accept="image/jpeg,image/png,image/webp"',
@@ -511,7 +511,7 @@ class ListingSecurityTests(MarketTestCase):
         )
         self.assertEqual(
             self.client.post(url, {"status": Listing.Status.SOLD}).status_code,
-            302,
+            403,
         )
         self.assertEqual(
             self.client.post(url, {"status": Listing.Status.ACTIVE}).status_code,

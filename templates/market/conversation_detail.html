@@ -27,6 +27,39 @@
 
     <div class="chat-safety-notice" role="note"><span aria-hidden="true">i</span><p>외부 결제·메신저로 이동하자는 요청이나 비밀번호·인증번호 요구에 응하지 마세요.</p></div>
 
+    {% if listing_visible %}
+      <section class="trade-confirm-card" aria-labelledby="trade-confirm-title">
+        <div>
+          <small>VERIFIED TRADE</small>
+          <h2 id="trade-confirm-title">상호 확인 거래</h2>
+          <p>판매자와 구매자가 모두 확인한 거래만 쌍방 후기를 작성할 수 있습니다.</p>
+        </div>
+        {% if active_trade and active_trade.status == 'PENDING_BUYER' %}
+          {% if user == conversation.buyer %}
+            <div class="trade-confirm-actions">
+              <form method="post" action="{% url 'market:trade_confirm' active_trade.pk %}">{% csrf_token %}<button class="button button-primary" type="submit">거래 완료 확인</button></form>
+              <form method="post" action="{% url 'market:trade_reject' active_trade.pk %}">{% csrf_token %}<button class="button button-quiet" type="submit">아직 완료되지 않았어요</button></form>
+            </div>
+          {% else %}
+            <p class="trade-state">구매자의 확인을 기다리고 있습니다.</p>
+            <form method="post" action="{% url 'market:trade_cancel' active_trade.pk %}">{% csrf_token %}<button class="button button-quiet" type="submit">완료 요청 취소</button></form>
+          {% endif %}
+        {% elif active_trade and active_trade.status == 'COMPLETED' %}
+          <p class="trade-state trade-state-complete">양측 확인 완료 · {{ active_trade.completed_at|date:"Y년 m월 d일 H:i" }}</p>
+          {% if has_reviewed %}
+            <span class="review-complete-label">후기 작성 완료</span>
+          {% else %}
+            <a class="button button-primary" href="{% url 'market:review_create' active_trade.pk %}">상대방 후기 작성</a>
+          {% endif %}
+        {% elif user == conversation.seller and interaction_allowed %}
+          <form method="post" action="{% url 'market:trade_request_completion' conversation.pk %}">
+            {% csrf_token %}
+            <button class="button button-outline" type="submit">이 구매자에게 거래 완료 확인 요청</button>
+          </form>
+        {% endif %}
+      </section>
+    {% endif %}
+
     <div class="message-thread" aria-label="메시지 목록" role="log" tabindex="0">
       {% with thread_messages=conversation_messages|default:conversation.messages.all %}
       {% if thread_messages %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}관심 검색 관리 · TINY MARKET{% endblock %}
+{% block body_class %}form-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-compact"><div class="shell"><nav class="breadcrumbs" aria-label="현재 위치"><a href="{% url 'market:home' %}">홈</a><span aria-hidden="true">/</span><span aria-current="page">관심 검색</span></nav><span class="eyebrow eyebrow-light">SAVED SEARCH</span><h1>찾는 물건을 저장해 두세요.</h1><p>저장 이후 새로 등록된 공개 상품만 구조화된 알림으로 알려드립니다.</p></div></section>
+
+<section class="shell feature-page-grid">
+  <article class="form-card">
+    <div class="form-card-heading"><span class="step-badge" aria-hidden="true">01</span><div><h2>새 관심 검색</h2><p>최대 20개까지 저장할 수 있습니다.</p></div></div>
+    {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+    <form method="post" action="{% url 'market:saved_search_create' %}" class="stack-form" novalidate>
+      {% csrf_token %}
+      {% for field in form.visible_fields %}<div class="field-group{% if field.errors %} field-error{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}</div>{% endfor %}
+      <button class="button button-primary" type="submit">관심 검색 저장</button>
+    </form>
+  </article>
+
+  <article class="form-card form-card-wide">
+    <div class="form-card-heading"><span class="step-badge" aria-hidden="true">02</span><div><h2>저장한 검색</h2><p>검색 조건의 소유자만 조회·삭제할 수 있습니다.</p></div></div>
+    {% if saved_searches %}
+      <div class="saved-search-list">
+        {% for item in saved_searches %}
+          <article>
+            <div><strong>{% if item.query %}‘{{ item.query }}’{% else %}모든 검색어{% endif %}</strong><p>{% if item.category %}{{ item.get_category_display }}{% else %}전체 카테고리{% endif %} · {% if item.region %}{{ item.region }}{% else %}전체 지역{% endif %}</p><time datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:"Y.m.d H:i" }} 저장</time></div>
+            <div class="saved-search-actions"><a href="{% url 'market:home' %}?q={{ item.query|urlencode }}&amp;category={{ item.category|urlencode }}&amp;region={{ item.region|urlencode }}">결과 보기</a><form method="post" action="{% url 'market:saved_search_delete' item.pk %}">{% csrf_token %}<button type="submit">삭제</button></form></div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}<div class="empty-state compact-empty"><h3>저장한 검색이 없습니다.</h3><p>홈에서 검색 조건을 적용하고 알림 받기를 눌러보세요.</p></div>{% endif %}
+  </article>
+</section>
+{% endblock %}

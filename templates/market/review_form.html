@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}거래 후기 작성 · TINY MARKET{% endblock %}
+{% block body_class %}form-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-compact">
+  <div class="shell">
+    <nav class="breadcrumbs" aria-label="현재 위치"><a href="{% url 'market:conversation_detail' trade.conversation_id %}">거래 대화</a><span aria-hidden="true">/</span><span aria-current="page">거래 후기</span></nav>
+    <span class="eyebrow eyebrow-light">VERIFIED REVIEW</span>
+    <h1>{{ counterpart.username }}님과의 거래는 어땠나요?</h1>
+    <p>양측이 완료를 확인한 거래에서 한 번씩 작성하며, 두 후기는 함께 공개됩니다.</p>
+  </div>
+</section>
+
+<section class="shell form-layout">
+  <article class="form-card form-card-wide">
+    <div class="form-card-heading"><span class="step-badge" aria-hidden="true">01</span><div><h2>거래 후기 작성</h2><p>연락처·주소·계좌 등 개인정보는 적지 마세요.</p></div></div>
+    {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+    <form method="post" class="stack-form review-form" novalidate>
+      {% csrf_token %}
+      {% for field in form.visible_fields %}
+        <div class="field-group{% if field.errors %} field-error{% endif %}">
+          <fieldset{% if field.name != 'rating' %} class="plain-fieldset"{% endif %}>
+            {% if field.name == 'rating' %}<legend>{{ field.label }}</legend>{{ field }}{% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}
+          </fieldset>
+          {% if field.help_text %}<p class="field-help">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<div role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="form-actions"><a class="button button-quiet" href="{% url 'market:conversation_detail' trade.conversation_id %}">취소</a><button class="button button-primary" type="submit">후기 등록</button></div>
+    </form>
+  </article>
+  <aside class="form-aside"><div class="tip-card"><span class="tip-number" aria-hidden="true">i</span><h2>공개 범위</h2><p>양쪽 후기가 모두 제출된 뒤 평점·본문·작성일과 거래 당시 역할만 공개합니다. 상품명·가격·지역·대화 내용은 표시하지 않습니다.</p></div></aside>
+</section>
+{% endblock %}

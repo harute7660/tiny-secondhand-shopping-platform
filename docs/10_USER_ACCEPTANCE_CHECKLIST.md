@@ -54,7 +54,11 @@
 - [x] 이미지 첨부 영역은 저채도 세이지로 한정하고 전용 현재 이미지 위젯은 guarded URL만 사용하며 내부 저장명·`MEDIA_URL`을 HTML에 노출하지 않음을 `ListingSecurityTests` 26개로 검증
 - [ ] **BLOCKER:** 발표·배포 서버를 `DEBUG=False`로 실행하고 reverse proxy까지 포함한 오류 화면에 traceback·절대경로·버전·설정·POST 값이 없는지 수동 확인
 - [ ] **[권장]** plain text 400·429와 기본 405를 공통 UI로 통일하고 429 `Retry-After`를 제공할지 결정
-- [x] 변경 후 전체 tests **170개 / 102.496초**, coverage 계측 실행 **170개 / 103.560초, 4,222 statements / 248 miss / 94%**, Ruff lint·format 37개 파일, Bandit 0건, Django check 0건, migration 변경 없음, CSS 중괄호 935/935 결과 기록
+- [x] 확장 기능 포함 전체 tests **206개 / 114.641초**, coverage 계측 실행 **206개 / 115.434초, 5,778 statements / 343 miss / 94%**, Ruff lint·format 46개 파일, Bandit·pip-audit·deploy check 0건, Django check 0건, migration 변경 없음, CSS 중괄호 987/987 결과 기록
+- [x] 세 기능 핵심·추가 보안 표적 36개에서 상호확인 후기, 알림 소유권·비공개 정보, 5장·20MB·하자·다중 증거, 수동 이벤트 재처리와 완료 거래 복구를 검증
+- [ ] 판매자·구매자 두 세션으로 완료 요청→확인→각 후기 작성→동시 공개를 실제 화면에서 확인
+- [ ] 관심 검색 저장→새 상품 알림, 찜→가격 하락 알림, 읽음·삭제를 실제 화면에서 확인
+- [ ] 대표+추가 4장과 하자 체크리스트 등록·수정·대표 승격·모바일 표시를 실제 화면에서 확인
 - [ ] 정상 가입·상품·대화·신고·송금 흐름을 한 번씩 수행하며 DevTools Network의 예상하지 못한 500과 서버 traceback이 0건인지 확인
 - [ ] 실제 320px·200% 확대, 키보드 전용, 모바일 기기, 스크린리더 확인
 - [ ] **BLOCKER:** GitHub Public repository 생성·push·로그아웃 공개 확인

@@ -8,7 +8,7 @@
 - 완료 시각: `2026-07-13 17:43 +09:00`
 - 코드 확인: `accounts`·`community`·`market`·`config`의 route, model, migration, view, form, template, 정적 JavaScript, Admin, test를 직접 대조했다.
 - 자동 증적: 공개 프로필·마이페이지·전체 채팅·상품·신고 변경 범위의 6개 테스트 클래스 **79개**가 53.066초에 통과했다.
-- 전체 suite: **170개 전부 통과 / 102.496초**. Coverage 계측 실행도 **170개 전부 통과 / 103.560초 / 4,222 statements / 248 miss / 94%**였다. 아래 79개는 PDF 기능 변경의 직접 분기 증적이고, 이미지 첨부 UI는 `ListingSecurityTests` 26개, 170개는 전체 통합 영향 증적이다.
+- 전체 suite: 세 확장 기능 포함 **206개 전부 통과 / 114.641초**. Coverage 계측 실행도 **206개 전부 통과 / 115.434초 / 5,778 statements / 343 miss / 94%**였다. 아래 79개는 PDF 기능 변경의 직접 분기, 이미지 첨부 UI는 26개, 확장 기능과 추가 보안은 36개, 206개는 전체 통합 영향 증적이다.
 
 ```powershell
 .\.venv\Scripts\python.exe manage.py test `
@@ -27,7 +27,7 @@
 
 | ID | 상태 | 직접 확인한 구현·보안 통제 | 자동·코드 증적 |
 |---|:---:|---|---|
-| F-01 | **PASS** | `/accounts/signup/`·`/accounts/login/`; 정규화한 사용자명의 대소문자 무관 UNIQUE, Django password hash, 공개 privilege 필드 배제 | 기존 `SignupSecurityTests`·`LoginSecurityTests`, 79개 변경 기능 묶음과 최종 전체 170개 회귀 통과 |
+| F-01 | **PASS** | `/accounts/signup/`·`/accounts/login/`; 정규화한 사용자명의 대소문자 무관 UNIQUE, Django password hash, 공개 privilege 필드 배제 | 기존 `SignupSecurityTests`·`LoginSecurityTests`, 79개 변경 기능 묶음과 최종 전체 206개 회귀 통과 |
 | F-02 | **PASS** | `/accounts/users/<username>/`; `User.bio` 최대 500자. 활성 일반회원의 username·bio primitive만 template에 전달해 email·권한·정지정보를 공개하지 않음 | `PublicProfileSecurityTests`: 대소문자 조회, XSS escape, inactive/suspended/staff/superuser 404, POST 405 |
 | F-03 | **PASS** | `/accounts/me/`에서 bio만 allowlist 수정. `/accounts/me/password/`는 현재 비밀번호, Django 강도 validator, 256자 사전상한, 사용자당 10회/시간, `update_session_auth_hash` 적용 | `MyPageSecurityTests`: 인증·no-store, mass assignment 거부, 500자, 현재 비밀번호, 강도, 과대입력, rate, 세션 회전·유지, 정지 세션 거부 |
 | F-04 | **PASS** | `ListingForm`·`listing_create`가 제목·설명·가격·사진을 검증하고 seller·초기 상태를 서버 세션에서 결정. 첨부 컨트롤만 저채도 세이지를 쓰고 MIME accept/help를 명시 | `ListingSecurityTests` 26개: seller/status 위조, 가격, quota/rate, MIME·시그니처·재인코딩, 첨부 UI 회귀 |
@@ -68,10 +68,11 @@
 ## 최종 통합·브라우저 증적
 
 - `market.tests.ListingSecurityTests`: **26개 통과 / 18.104초** — 저채도 세이지 첨부 범위, MIME accept/help, guarded 현재 이미지 URL, 내부 저장명·`MEDIA_URL` 비노출, 모바일 CSS 검증
-- `manage.py test --verbosity 1`: **170개 통과 / 102.496초 / system check 문제 0건**
-- Coverage: 계측 실행 **170개 통과 / 103.560초 / 4,222 statements / 248 miss / 94%**
-- Ruff lint·37개 파일 format, Bandit(`community` 포함), pip-audit, `check --deploy --fail-level WARNING`: 문제 0건
-- `manage.py check`: 문제 0건; `makemigrations --check --dry-run`: 변경 없음; `accounts.0005`·`community.0001` 적용 완료; CSS 중괄호 935/935
+- 세 확장 기능과 추가 보안 표적: **36개 통과**
+- `manage.py test --verbosity 1`: **206개 통과 / 114.641초 / system check 문제 0건**
+- Coverage: 계측 실행 **206개 통과 / 115.434초 / 5,778 statements / 343 miss / 94%**
+- Ruff lint·46개 파일 format, Bandit(`community` 포함), pip-audit, `check --deploy --fail-level WARNING`: 문제 0건
+- `manage.py check`: 문제 0건; `makemigrations --check --dry-run`: 변경 없음; `market.0005`·`market.0006` 포함 적용 완료; CSS 중괄호 987/987
 - 실제 브라우저: 이미지가 있는 상품의 `비우기` 저장 → 정상 redirect·성공 메시지·placeholder·DB 빈 값·기존 파일 삭제·AttributeError/Traceback 0건
 - 실제 브라우저: DEBUG 미등록 URL의 일반 404에서 URL pattern·Django 버전·traceback 비노출; 1440px·320px 점검 페이지의 문서 overflow 0, 외부 asset 0, console 오류 0
 

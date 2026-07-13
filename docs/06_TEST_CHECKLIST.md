@@ -1,6 +1,6 @@
 # 기능·보안 테스트 체크리스트
 
-`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. 2026-07-13 SEC-031·032 수정과 PDF 25~29페이지 기능 추가 뒤 변경 범위 79개를 실행했고, 이미지 첨부 UI 보강 뒤 전체 170개 테스트를 최종 재실행했다. coverage 94%, 정적·공급망·deploy 검사도 모두 통과했다.
+`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. 2026-07-13 세 확장 기능과 보안 보강까지 포함한 전체 206개를 최종 재실행했다. coverage 94%, 정적·공급망·deploy 검사도 모두 통과했다.
 
 ## 자동 검사 요약
 
@@ -8,12 +8,13 @@
 |---|---|---|:---:|
 | Django 변경 기능 tests | 프로필·마이페이지·전체 채팅·상품·신고 6개 test class | 79개 전부 통과, 53.066초, system check 0건 | 현재 변경 범위 완료 |
 | 이미지 첨부 UI tests | `market.tests.ListingSecurityTests` | 26개 전부 통과, 18.104초 | 직접 분기 완료 |
-| Django 전체 tests | `manage.py test --verbosity 1` | 170개 전부 통과, 102.496초, system check 0건 | 완료 |
-| Coverage | `coverage run --source=accounts,community,config,market manage.py test` | 계측 170개 전부 통과, 103.560초, 4,222 statements / 248 miss / 94% | 완료 |
-| Ruff | `ruff check .` 및 `ruff format --check .` | lint 오류 0건, 37개 파일 형식 일치 | 완료 |
+| 세 확장 기능 표적 tests | 후기 9 + 알림 12 + 다중 이미지·하자 12 + 추가 보안 3 | 36개 전부 통과 | 직접 분기 완료 |
+| Django 전체 tests | `manage.py test --verbosity 1` | 206개 전부 통과, 114.641초, system check 0건 | 완료 |
+| Coverage | `coverage run --source=accounts,community,config,market manage.py test` | 계측 206개 전부 통과, 115.434초, 5,778 statements / 343 miss / 94% | 완료 |
+| Ruff | `ruff check .` 및 `ruff format --check .` | lint 오류 0건, 46개 파일 형식 일치 | 완료 |
 | Bandit | `bandit -r accounts community config market -c pyproject.toml -q` | 이슈 0건 | 완료 |
 | Django·migration | `manage.py check`, `makemigrations --check --dry-run` | system check 0건, 모델 변경 없음 | 완료 |
-| CSS 중괄호 | `static/css/site.css` 열림/닫힘 개수 비교 | 935 / 935 | 완료 |
+| CSS 중괄호 | `static/css/site.css` 열림/닫힘 개수 비교 | 987 / 987 | 완료 |
 | pip-audit 최초 | 가상환경 전체 | `pip` 취약점 6건 | 발견 |
 | pip-audit 재검사 | 현재 가상환경 전체 | 알려진 취약점 0건 | 조치 완료 |
 | Django 배포 검사 | 검증용 운영 환경의 `check --deploy --fail-level WARNING` | 문제 0건 | 완료 |
@@ -21,6 +22,23 @@
 | Runtime lock | SHA-256 포함 `requirements.lock` | `--require-hashes` 설치 검증 | 완료 |
 | Dev lock | `requirements-dev.lock` | 빈 대상 디렉터리에 `--require-hashes` 설치 성공 | 완료 |
 | CI·CodeQL | push/PR workflow·security-extended | 파일·commit SHA pin 검토 | GitHub 실행 예정 |
+
+## 사용자 요청 확장 기능
+
+- [x] 판매자 요청과 해당 대화 구매자 확인이 있어야 `Trade.COMPLETED`·`Listing.SOLD`가 됨
+- [x] 레거시 `SOLD`만으로 후기 권한이 생기지 않고, 제3자·위조 방향·중복 후기 요청이 차단됨
+- [x] 첫 후기는 비공개이며 양측 제출 뒤 함께 공개되고 공개 프로필에 상품·가격·지역·UUID가 노출되지 않음
+- [x] 후기 XSS가 escape되고 전화번호·이메일·URL·긴 숫자 패턴이 거부됨
+- [x] 저장 검색 정규화·20개 제한·소유자 IDOR·알림 수신자 IDOR·중복·소급 발송이 방어됨
+- [x] 실제 가격 하락만 old/new 값으로 알리고 차단·정지·판매자 자신을 제외함
+- [x] 비공개 상품 알림에서 제목·가격·이벤트 종류·링크가 숨겨짐
+- [x] 대표 포함 최대 5장·합계 20MB·허용 field가 sanitizer 전에 검사됨
+- [x] 추가 이미지 부모 IDOR·위조 삭제 UUID·stale 대표 경로·DB 실패 orphan이 방어됨
+- [x] 하자 허용목록·상태 조합·OTHER 상세와 XSS가 검증됨
+- [x] 신고 시 전 이미지 SHA·순서와 하자 snapshot이 저장되고 삭제 뒤 증거가 보존됨
+- [x] 관리자 다중 증거는 Report 권한과 부모 관계·SHA를 검증하고 내부 저장명을 숨김
+- [x] 미처리 알림 이벤트의 제한형 수동 재처리 명령과 완료 거래 자동차단 복구 회귀 통과
+- [~] 이번 세 기능의 실제 브라우저·키보드·스크린리더 인수와 PostgreSQL 경합·대량 fan-out 부하 검증은 후속 수행
 
 ## PDF 35페이지 최소 기능
 
@@ -36,7 +54,7 @@
 
 - 25~29페이지의 기능·화면·DB를 14개로 중복 제거한 최종 기능표는 `11_CORE_SUBMISSION_CHECKLIST.md`에 둔다.
 - 1차 **6 PASS / 3 PARTIAL / 5 FAIL**은 기능 추가 전 역사적 스냅샷이며 현재 판정은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`의 **14 PASS / 0 PARTIAL / 0 FAIL**이다.
-- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 이후 이미지 첨부 UI 직접 분기 26개와 최종 전체 170개를 각각 재검증했으며 위 자동 검사 요약이 최신 통합 수치다.
+- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 이후 이미지 첨부 UI 직접 분기 26개, 확장 기능·보안 표적 36개를 각각 재검증했으며 최신 통합 수치는 전체 206개·coverage 94%다. 전체 170개는 확장 기능 추가 전 역사적 스냅샷이다.
 - [x] TEST-SD001 공개 사용자 프로필과 소개글 조회 - username·bio allowlist, inactive/suspended/staff/superuser 비공개, XSS escape, read-only
 - [x] TEST-SD002 본인 소개글·비밀번호 변경 마이페이지 - bio mass assignment 방지, 현재 비밀번호·강도 validator·256자 사전상한·10회/시간·세션 회전
 - [x] TEST-SD003 실시간 전체 채팅 - 인증·CSRF·서버 발신자·XSS `textContent`·양방향 차단·signed cursor·요청/렌더 상한·rate·hidden pause/backoff·read-only Admin
@@ -154,7 +172,7 @@
 - [x] TEST-R009 감청색 UI 1440×1000 실화면에서 sticky header·hero·4열 Grid·문서 가로 overflow 0 확인; 1080/900/700/470/360px cascade, header·검색·CTA·상태 변경·페이지네이션·신고 컨트롤 최소 44px, 회원 nav 내부 overflow와 긴 입력 줄바꿈 정적 감사
 - [~] TEST-R010 블랙·화이트 UI에서 1440×1000 홈 4열·overflow 0, 320×800 홈 1열·overflow 0·primary button 44px, 로그인·안전 화면 overflow 0·외부 asset 0 확인; 상품 사진 `filter: none`; 실제 키보드 focus 이동은 최종 사용자 확인 필요
 - [x] TEST-R011 실제 브라우저에서 SEC-031 이미지 비우기 저장·상세 placeholder·DB 빈 값·기존 파일 삭제와 DEBUG 404 기술정보 비노출을 재검증; 1440px 마이페이지와 320px 마이페이지·전체 채팅·내 상품의 문서 overflow 0 확인
-- [x] TEST-R012 블랙·화이트 전역에서 이미지 첨부 영역만 저채도 세이지로 한정하고 업로드 사진은 원색 유지; JPEG·PNG·WebP MIME accept와 5MB·1,200만 픽셀 help, guarded URL 현재 이미지, 내부 저장명·`MEDIA_URL` 비노출, 470px 이하 모바일 CSS를 `ListingSecurityTests` 26개 및 CSS 중괄호 935/935로 검증. 주요 조합의 계산 명암비는 본문/패널 11.61:1, 흰색/버튼 7.62:1, 도움말/패널 6.31:1이며 실제 200% 확대·focus 사용성은 사용자 수동 QA로 남김
+- [x] TEST-R012 블랙·화이트 전역에서 이미지 첨부 영역만 저채도 세이지로 한정하고 업로드 사진은 원색 유지; JPEG·PNG·WebP MIME accept와 5MB·1,200만 픽셀 help, guarded URL 현재 이미지, 내부 저장명·`MEDIA_URL` 비노출, 470px 이하 모바일 CSS를 `ListingSecurityTests` 26개 및 CSS 중괄호 987/987로 검증. 주요 조합의 계산 명암비는 본문/패널 11.61:1, 흰색/버튼 7.62:1, 도움말/패널 6.31:1이며 실제 200% 확대·focus 사용성은 사용자 수동 QA로 남김
 
 ## 명시적 N/A
 
@@ -174,4 +192,4 @@
 - [~] REL-T06 최초 GitHub Actions CI·CodeQL·Dependabot 실행 결과와 대상 commit SHA 기록
 - [~] REL-T07 운영 reverse proxy가 `MEDIA_ROOT`·`/_private-media/`를 직접 alias로 노출하지 않고 모든 이미지 요청이 Django 권한검사 view를 통과하는지 배포 설정 검증
 - [x] REL-T08 README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
-- [x] REL-T09 SEC-031·032 직접 분기, 변경 기능 79개, 이미지 첨부 UI 26개, 전체 170개, coverage 4,222 statements / 248 miss / 94%, Ruff·Bandit·pip-audit·deploy check 최종 통합 검증 완료
+- [x] REL-T09 SEC-031~041 직접 분기, 확장 기능 표적 36개, 전체 206개, coverage 5,778 statements / 343 miss / 94%, Ruff·Bandit·pip-audit·deploy check 최종 통합 검증 완료

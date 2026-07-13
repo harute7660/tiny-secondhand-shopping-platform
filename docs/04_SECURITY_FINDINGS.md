@@ -45,6 +45,14 @@
 | SEC-031 | 상품 이미지 삭제 sentinel을 파일 객체로 오인해 500 발생 | Medium | Fixed | `FileField.save_form_data()` 정규화와 삭제·유지·교체·실패 회귀 통과 |
 | SEC-032 | 개발·발표 모드의 기술 오류 페이지 내부정보 노출 | Medium | Fixed | SafeExceptionMiddleware·standalone fallback의 DEBUG/운영 비노출 회귀 통과 |
 | SEC-033 | 상품 수정 위젯의 내부 이미지 저장명·무효 private media URL 노출 | Low | Fixed | 보호 route 렌더링·저장명/`MEDIA_URL` 비노출 회귀 통과 |
+| SEC-034 | 판매자의 단독 `SOLD` 전환을 거래·후기 권한으로 오인 | High | Fixed | 대화에 묶인 `Trade` 쌍방 확인·legacy SOLD 후기 거부 |
+| SEC-035 | 완료 상품 직접 수정·삭제·재판매와 사후 차단을 이용한 후기 억압 | High | Fixed | 모든 mutation 재인가·완료 상태 보호·사후 차단 독립 확인 |
+| SEC-036 | 후기의 저장형 XSS·연락처 노출·선공개 보복 위험 | Medium | Mitigated | 입력 정규화·PII 패턴 거부·autoescape·쌍방 blind 공개 |
+| SEC-037 | 알림 UUID IDOR와 비공개 상품 제목·가격·이벤트 노출 | High | Fixed | 수신자 scope·현재 공개성 재검사·일반 비공개 카드 |
+| SEC-038 | 알림 fan-out의 소급 구독·중복·rollback 유령·자원고갈 | Medium | Mitigated | 구조화 이벤트·시각 경계·멱등 UNIQUE·`on_commit`·batch/quota |
+| SEC-039 | 다중 이미지의 전체 개수·합계 용량 누락과 stale 삭제 필드 | Medium | Fixed | sanitizer 전 전역 제한·잠근 자식 재검사·대표 승격 |
+| SEC-040 | 추가 사진 child IDOR·내부 저장명·rollback orphan | High | Mitigated | 부모-자식 동시 scope·보호 응답·실패 시 신규 파일 정리 |
+| SEC-041 | 위조 하자 코드와 신고 다중 증거·관리자 열람 경계 누락 | High | Mitigated | 허용목록·전체 snapshot·report-scoped 무결성 검증 route |
 
 ### SEC-001 - 신고 대상의 모델 검증 전 서버 바인딩 누락
 
@@ -316,9 +324,89 @@
 - 잔여 위험: 보호 route도 권한검사와 `private, no-store`를 계속 유지해야 하며 reverse proxy는 `MEDIA_ROOT`와 `/_private-media/`를 직접 서빙하면 안 된다. 브라우저 `accept`는 보안 검증이 아니므로 서버 sanitizer를 제거하거나 완화하지 않는다.
 - 상태: **Fixed**. 내부 저장명·직접 private media URL을 사용자 HTML에 렌더링하지 않고 보호된 application route만 사용한다.
 
+### SEC-034 - 단독 `SOLD` 상태를 거래·후기 권한으로 오인
+
+- 발견 단계/방법: 거래 완료 사용자만 후기 작성 기능을 설계하며 기존 상태 변경 route와 상품·대화 모델을 역추적했다. 판매자는 상품을 단독으로 `SOLD`로 바꿀 수 있었고, `Listing`에는 실제 구매자 식별자가 없어 `SOLD`만으로 후기 권한을 만들면 임의 대화 상대 또는 비거래 사용자를 구매자로 오인할 수 있음을 확인했다.
+- KISA/CWE 연결: 부적절한 인가, 신뢰되지 않은 입력을 보안기능 결정에 사용, CWE-285·CWE-639.
+- 영향: 판매자가 거래를 일방 완료하거나 buyer ID를 위조해 거짓 후기를 만들고, 이미 판매된 legacy 상품에 사후 후기를 붙여 평판을 조작할 수 있다.
+- 변경: 일반 상품 상태 변경은 `ACTIVE`↔`RESERVED`만 허용했다. 판매자가 자신이 참여한 `Conversation`으로 완료를 요청하고 그 대화의 구매자가 확인한 `Trade.COMPLETED`에서만 `SOLD`가 되며 후기를 허용한다. 상품·대화별 진행/완료 거래 UNIQUE, 상태별 timestamp CHECK, 행 잠금·atomic을 추가하고 legacy `SOLD`만 존재하는 상품은 후기 자격으로 인정하지 않는다.
+- 검증: `test_seller_request_then_buyer_confirmation_completes_bound_trade`, `test_third_party_cannot_enumerate_or_mutate_trade_and_review`, `test_legacy_sold_listing_without_verified_trade_cannot_gain_review`가 통과했다.
+- 잔여 위험: 쌍방 공모와 물리적 인도 여부는 시스템이 증명하지 못한다. 운영에서는 이상 거래·후기 그래프, 이의제기와 PostgreSQL 동시성 검증이 필요하다.
+- 상태: **Fixed**. 후기 인가의 근거를 판매자 단독 상태가 아닌 상호 확인된 거래 객체로 변경했다.
+
+### SEC-035 - 완료 상품 mutation과 사후 차단을 이용한 후기 억압
+
+- 발견 단계/방법: UI 버튼 노출 조건이 아니라 update·delete·status·conversation POST를 직접 호출하는 악성 흐름과 완료 요청 뒤 `UserBlock`을 추가하는 흐름을 점검했다. 완료 상품의 직접 mutation 경로와 일반 상호작용 판정이 거래 종료에도 그대로 적용되면 판매자가 증거를 삭제·재판매하거나 구매자 확인을 차단할 수 있었다.
+- KISA/CWE 연결: 부적절한 인가, 보호 메커니즘 실패, CWE-285·CWE-863.
+- 영향: 완료 거래의 상품 내용·상태가 바뀌어 후기와 신고의 문맥이 훼손되고, 판매자가 완료 요청 직후 구매자를 차단해 확인 및 부정적 후기를 억압할 수 있다.
+- 변경: 상품 수정·soft delete·상태 변경·새 대화 시작마다 서버에서 `PENDING_BUYER`와 `COMPLETED` 거래를 재조회해 거절한다. 구매자의 완료 응답은 현재 참여자·계정·상품 차단 상태를 확인하되 요청 이후 생성된 `UserBlock`은 권한 박탈 근거로 사용하지 않는다. 거절·판매자 취소는 잠근 상품을 요청 전 상태로 복구한다.
+- 검증: `test_completed_trade_blocks_update_delete_reopen_and_new_contact`, `test_seller_block_after_request_cannot_suppress_buyer_confirmation`, `test_reject_and_seller_cancel_restore_initial_listing_status`가 직접 POST 분기를 통과했다.
+- 잔여 위험: 관리자 제재로 상품·계정이 차단되면 거래 종료가 중단될 수 있으며, 이 경우의 분쟁 처리와 증거 보존 SLA는 운영 정책이 필요하다.
+- 상태: **Fixed**. UI 숨김과 무관하게 모든 관련 mutation 경계에서 완료 거래를 보호한다.
+
+### SEC-036 - 후기 저장형 XSS·개인정보 노출과 선공개 보복
+
+- 발견 단계/방법: 공개 후기 본문을 공격 표면으로 놓고 script markup, 이메일·URL·긴 전화번호 형태와 첫 후기 직후 상대가 내용을 보는 시나리오를 점검했다.
+- KISA/CWE 연결: 크로스사이트 스크립트, 개인정보 노출 최소화, CWE-79·CWE-200.
+- 영향: escape가 빠진 새 템플릿에서 저장형 XSS로 발전하거나 공개 프로필에 연락처가 노출될 수 있고, 먼저 작성된 평가를 본 상대가 보복성 별점·본문을 작성할 수 있다.
+- 변경: `ReviewForm`은 NFKC 정규화와 허용되지 않은 제어문자, 이메일·URL·7자리 이상 숫자열 패턴을 거부하고 별점 1~5·본문 500자를 모델과 DB 제약으로 다시 제한한다. 방향은 서버가 결정하고 첫 후기는 `PENDING`, 두 번째 생성 뒤 두 후기를 동시에 `PUBLIC`으로 바꾼다. 공개 프로필은 공개 후기의 primitive 허용목록만 전달하고 Django autoescape를 유지하며 거래 UUID·상품·가격·지역을 제외한다.
+- 검증: `test_reviews_are_server_direction_bound_blind_published_and_unique`, `test_review_rejects_common_public_pii_patterns`, `test_public_profile_escapes_xss_and_hides_trade_metadata`가 통과했다.
+- 잔여 위험: 정규식은 모든 우회 표기와 문맥상 개인정보를 판별할 수 없고 정상 문장을 오탐할 수 있다. `HIDDEN` 상태는 있으나 운영자 숨김 action·신고/이의제기 workflow는 아직 완성되지 않아 배포 전 보강해야 한다.
+- 상태: **Mitigated**. 현재 알려진 출력·PII·보복 경로를 줄였지만 사람 moderation은 잔여 통제다.
+
+### SEC-037 - 알림 객체 IDOR와 비공개 상품 metadata 노출
+
+- 발견 단계/방법: 저장 검색 삭제·개별 읽음 route의 UUID를 다른 사용자 값으로 바꾸고, 알림 생성 뒤 상품을 `BLOCKED`로 전환해 알림함의 제목·이전/새 가격·이벤트 종류가 남는지 점검했다.
+- KISA/CWE 연결: 부적절한 인가, 중요정보 노출, CWE-639·CWE-200.
+- 영향: 공격자가 타인의 알림 상태나 저장 검색을 변경하고, 신고 차단·삭제된 상품의 제목과 가격 변동을 알림 snapshot을 통해 계속 열람할 수 있다.
+- 변경: 저장 검색 삭제와 알림 읽음은 항상 `(pk, user/recipient=request.user)`로 조회하고 전체 읽음도 recipient filter만 갱신한다. 알림 목록은 요청 시 현재 상품의 공개 가능성을 다시 평가하며 비공개면 제목·가격·`NEW_MATCH`/`PRICE_DROP` 종류를 전달하지 않는 일반 카드만 렌더링한다.
+- 검증: `test_saved_search_delete_and_notification_read_are_owner_scoped`, `test_private_listing_hides_title_prices_and_event_kind`가 타인 UUID와 차단 상품 분기를 통과했다.
+- 잔여 위험: 알림·저장 검색의 보존기간과 사용자 일괄 삭제 정책은 아직 운영 문서가 필요하며, 신규 템플릿에서도 객체 전체 전달을 다시 도입하지 않도록 회귀를 유지해야 한다.
+- 상태: **Fixed**. 객체 소유권과 현재 상품 공개 상태를 각각 서버에서 재검사한다.
+
+### SEC-038 - 알림 fan-out 소급·중복·실패와 자원고갈
+
+- 발견 단계/방법: 한 사용자의 여러 저장 검색 동시 매칭, 이벤트 생성 뒤 구독 추가, 가격 인상·인하, 차단·정지 계정, 같은 이벤트 재처리와 transaction commit 전 전달을 적대적으로 조합했다.
+- KISA/CWE 연결: 부적절한 자원 관리, 경쟁조건, 신뢰경계 오류, CWE-400·CWE-362.
+- 영향: 같은 사건의 알림 폭증, 과거 상품의 소급 알림, rollback된 상품의 유령 알림, 변조된 가격 하락 정보, 차단 관계 우회와 동기 대량 조회로 인한 요청 지연이 발생할 수 있다.
+- 변경: `ListingEvent`에 사건 종류·잠근 old/new 가격·시각·처리 시각을 저장하고 이벤트 형태 CHECK와 `(recipient,event)` UNIQUE를 적용했다. 이벤트 이전에 생성된 저장 검색/찜만 대상으로 판매자·양방향 차단·비활성·정지 계정을 제외하고 사용자별 한 건으로 합친다. 20개 검색 quota, 200개 iterator/bulk batch, 이벤트 행 잠금과 멱등 `processed_at`을 사용하며 fan-out은 `transaction.on_commit()` 뒤 시작한다. callback 실패는 상품 write를 rollback하지 않고 이벤트를 미처리로 남긴다.
+- 검증: `test_new_listing_matches_multiple_searches_but_creates_one_notification`, `test_subscriptions_created_after_event_are_not_retroactive`, `test_listing_update_notifies_only_on_drop_with_locked_old_and_new_prices`, `test_blocked_suspended_and_seller_accounts_are_excluded`, `test_dispatch_is_idempotent_even_when_pending_state_is_retried`, `test_create_event_dispatches_only_from_on_commit_callback`가 통과했다.
+- 잔여 위험: 매칭은 현재 웹 프로세스에서 선형 순회한다. 미처리 이벤트를 `--limit` 범위에서 수동 재처리하는 명령은 추가했지만 자동 worker·backoff는 아니므로 운영 전 queue·dead-letter/지연 지표와 PostgreSQL 잠금·대량 부하 검증이 필요하다.
+- 상태: **Mitigated**. 현재 규모의 중복·시각·transaction 경계는 통제했으나 대규모 비동기 운영 통제는 남아 있다.
+
+### SEC-039 - 다중 이미지 전체 제한 누락과 stale 삭제 필드
+
+- 발견 단계/방법: 대표 사진과 추가 사진을 서로 다른 form field에 나눴을 때 각 field만 검사하는 우회, 여섯 장 업로드, 대표를 제외한 합계 계산, 다른 상품의 추가 사진 UUID를 삭제 목록에 넣는 흐름을 점검했다.
+- KISA/CWE 연결: 입력데이터 검증, 자원고갈, 신뢰되지 않은 참조, CWE-20·CWE-400.
+- 영향: 공격자가 허용 개수·20MB 합계를 우회해 이미지 decode 비용을 키우거나 stale/위조 자식 ID로 다른 상품 사진을 삭제할 수 있다.
+- 변경: form/sanitizer보다 먼저 `request.FILES` key를 `image`·`extra_images`로 제한하고 두 field의 모든 파일을 합쳐 최대 5장·20MB를 검사한다. 폼도 기존-삭제+추가 최종 개수를 검증하며 삭제 선택지는 현재 상품 자식만 만든다. 저장 transaction에서 상품과 현재 `ListingImage`를 잠그고 제출 ID가 그 집합의 부분집합인지 다시 확인한다. 대표 삭제 시 첫 추가 사진을 승격하고 위치 1~4 CHECK·상품별 위치 UNIQUE를 유지한다.
+- 검증: `test_six_files_are_rejected_before_image_sanitizing`, `test_representative_is_included_in_batch_limit_before_sanitizing`, `test_unexpected_file_field_is_rejected_before_sanitizing`, `test_foreign_listing_extra_image_cannot_be_deleted`, `test_clearing_primary_promotes_first_extra_and_cleans_old_file`가 통과했다.
+- 잔여 위험: reverse proxy가 Django 제한 전 body를 받을 수 있으므로 요청 본문 제한이 별도로 필요하고, SQLite의 행 잠금 의미는 운영 PostgreSQL과 같지 않다.
+- 상태: **Fixed**. 애플리케이션의 모든 이미지 field를 하나의 batch 경계와 잠근 자식 인가로 묶었다.
+
+### SEC-040 - 추가 사진 child IDOR·내부 경로와 rollback orphan
+
+- 발견 단계/방법: 공개 상품 UUID에 다른 상품의 추가 사진 UUID를 조합하고, 수정/상세 HTML에서 storage name을 검색했으며, 대표와 추가 파일 저장 뒤 DB 예외를 강제로 발생시켰다.
+- KISA/CWE 연결: 부적절한 인가, 시스템 정보 노출, 불완전한 cleanup, CWE-639·CWE-200·CWE-459.
+- 영향: 비공개 또는 다른 상품의 사진 열람, 내부 object key 노출, 실패 요청 반복으로 orphan 파일과 저장 비용이 누적될 수 있다.
+- 변경: 추가 사진 route는 먼저 공개 가능한 부모 상품을 조회한 뒤 `(pk=image_pk, listing=parent)`로 자식을 제한하고 `private, no-store`·`nosniff`를 적용한다. 템플릿은 application route만 사용해 내부 저장명과 `MEDIA_URL`을 출력하지 않는다. 생성·수정 중 새로 쓴 `FieldFile`을 추적해 transaction 예외 시 해당 상품 prefix의 요청 생성 파일만 삭제하고 기존 교체 파일 삭제는 commit 뒤 수행한다.
+- 검증: `test_extra_image_route_enforces_parent_visibility_and_no_store`, `test_listing_pages_do_not_expose_internal_storage_names`, `test_database_failure_after_file_write_cleans_all_orphans`가 forged parent, HTML 비노출과 저장 후 강제 실패를 통과했다.
+- 잔여 위험: cloud object storage 삭제는 best-effort·eventual consistency일 수 있다. 운영에서는 주기적 DB-reference/orphan 대사와 삭제 실패 지표가 필요하다.
+- 상태: **Mitigated**. 확인한 route와 요청 rollback 경로는 방어했으며 외부 저장소 운영 대사가 잔여 통제다.
+
+### SEC-041 - 하자·신고 다중 증거와 관리자 열람 경계 누락
+
+- 발견 단계/방법: 임의 하자 code와 상태/코드 불일치를 제출하고, 대표 외 추가 사진이 신고 뒤 삭제되는 흐름과 관리자 증거 URL의 report/evidence ID 조합을 점검했다.
+- KISA/CWE 연결: 입력데이터 검증, 증거 무결성, 부적절한 인가, CWE-20·CWE-639.
+- 영향: 판매자가 정의되지 않은 하자 값을 저장해 필터·표시를 우회하고, 신고 후 추가 사진이나 하자 설명을 바꿔 조사 증거가 소실되며, 관리자가 권한 없는 report의 child evidence를 열람하거나 큰 파일을 메모리에 읽을 수 있다.
+- 변경: 하자 상태를 3개, 코드를 8개 `TextChoices` 허용목록으로 제한하고 `PRESENT`에는 하나 이상, `OTHER`에는 상세 설명을 요구한다. 신고 transaction에서 모든 사진의 위치·저장명·SHA-256과 하자 상태·코드·설명을 snapshot하며 참조된 파일은 상품 삭제 뒤에도 보존한다. `ReportImageEvidence`는 독립 Admin에 등록하지 않고 report change 화면에서만 링크한다. 열람 route는 report 조회 권한과 `(report,evidence_id)`를 재검사하고 최대 5MB+1byte만 읽으며 `hmac.compare_digest()` 무결성 검증, `private, no-store`·`nosniff`, 고정 파일명을 적용한다.
+- 검증: `test_defect_disclosure_code_and_other_detail_rules`, `test_defect_details_are_escaped_on_detail_page`, `test_report_snapshots_all_images_and_defects_then_retains_files_on_delete`, `test_all_report_images_use_report_scoped_verified_endpoint`가 위조 코드·XSS·삭제 뒤 3장 보존·내부명 비노출·잘못된 parent 404를 통과했다.
+- 잔여 위험: 증거 보존기간·법적 삭제·승인자 분리와 접근로그 보관 기준은 아직 운영 정책이 필요하다. 현재 관리자 표적 회귀는 report-scope를 검증했으며 oversized·digest mismatch 다중 증거 분기는 기존 단일 증거 검사와 공유하지만 별도 회귀를 추가할 가치가 있다.
+- 상태: **Mitigated**. 입력·snapshot·관리자 조회의 기술 경계는 적용했고 증거 lifecycle 정책은 남아 있다.
+
 ## 2026-07-13 신규 기능의 위협 검토와 예방 통제
 
-이번 변경에서 새 공격면을 의도적으로 취약하게 만든 뒤 고친 것이 아니라, 구현 전에 위협을 식별해 같은 변경에서 예방 통제를 적용했다. 따라서 별도 SEC 번호의 “발견 취약점”으로 부풀리지 않고 아래 설계 증적으로 기록한다.
+기능을 의도적으로 취약하게 만든 뒤 고친 것은 아니다. SEC-034~041은 기존 직접 상태 변경 경로와 신규 기능의 구현·적대적 테스트에서 실제로 확인한 공격 경계를 기록했고, 아래 표는 구현 전에 식별해 같은 변경에서 예방한 추가 통제를 별도로 정리한다.
 
 | 기능 | 식별한 위험 | 적용한 통제 | 표적 증적 |
 |---|---|---|---|
@@ -326,6 +414,9 @@
 | 비밀번호 변경 | 현재 비밀번호 없이 탈취, 약한 비밀번호, oversized hash DoS, brute force, 변경 후 세션 혼동 | Django `PasswordChangeForm`·validators, 256자 사전 제한, 시간당 10회, sensitive POST, `update_session_auth_hash` | 현재 비밀번호·강도·사전 길이·rate·세션 회전 회귀 |
 | 로그인 회원 전체 채팅 | sender 위조, CSRF, XSS, 무제한 본문·조회·DOM, cursor 변조, 차단 우회 | session sender, POST+CSRF, 1,000자, 송신 10/분·조회 40/분, 서명 cursor·100건, `textContent`, DOM 200개, 양방향 차단 필터 | 인증·CSRF·sender·XSS·cursor tamper·limit·block·Admin read-only 회귀 |
 | 신고 누적 자동조치 | 중복·자기신고·공모에 의한 서비스거부, 관리자 lockout, 경합, 영구삭제 오탐 | 서로 다른 3 OPEN reporter, 조건부 UNIQUE, 자기/판매자 제외, target row lock·atomic, staff/superuser 보호, 임시 제재·감사로그·권한 복구 | 중복 미집계·3인 threshold·safe redirect·보호계정·자동복구·수동차단 불변 회귀 |
+| 쌍방 후기 | 단독 완료·buyer 위조·IDOR·보복 후기·PII/XSS | conversation-bound Trade, buyer confirm, server direction, blind publication, primitive 공개 허용목록 | 완료/거절·legacy SOLD·제3자·완료 mutation·사후 block·blind/unique·PII/XSS 회귀 |
+| 관심 검색·가격 하락 알림 | IDOR·비공개 metadata·소급·중복·rollback 유령·fan-out DoS | owner scope, 현재 공개성, 구조화 event, created-at 경계, recipient UNIQUE, on-commit, quota/batch | 소유자·private card·중복 조건·late subscription·locked price·exclude·idempotence 회귀 |
+| 다중 사진·하자·신고 증거 | 파일 수/합계 우회·stale child ID·orphan·XSS·증거 소실·Admin child IDOR | 전체 batch limit, locked child scope, protected route, rollback cleanup, defect allowlist, multi-hash snapshot, report-scoped Admin | 5장/20MB·unexpected field·foreign child·orphan·XSS·삭제 보존·Admin scope 회귀 |
 
 ## 자동검사 증적
 
@@ -335,7 +426,22 @@
 - 결과: **87개 통과 / 53.390초 / system check 문제 0건**
 - 해석: 이 실행은 SEC-031·032와 새 기능 통제의 직접 분기 증적이며, 아래 최종 통합 품질 게이트로 전체 영향도 별도 확인했다.
 
-### 2026-07-13 최종 통합 품질 게이트
+### 2026-07-13 쌍방 후기·알림·다중 이미지 표적 회귀
+
+- 실행 1: `market.test_trade_reviews`, `market.test_saved_search_notifications`, `market.test_multi_image_defects` **33개 통과 / 7.263초 / system check 문제 0건**
+- 실행 2: `market.test_admin_image_evidence` **1개 통과 / 0.314초 / system check 문제 0건**
+- 실행 3: 실패 이벤트 재처리 명령과 완료 거래 자동차단 복구 **2개 통과**
+- 해석: SEC-034~041과 ADR-017~019의 직접 분기 36개 증적이다. 실운영 PostgreSQL 부하·브라우저 UX를 검증한 결과는 아니며, 전체 영향은 아래 최신 통합 품질 게이트로 별도 확인했다.
+
+### 2026-07-13 세 기능 포함 최신 통합 품질 게이트
+
+- Django 비계측 전체 tests: **206개 통과 / 114.641초 / system check 문제 0건**
+- Coverage 계측 실행: **206개 통과 / 115.434초 / 5,778 statements / 343 miss / 94%**
+- Ruff: lint 오류 0건, 46개 파일 format 일치
+- Bandit·pip-audit·deploy check: 이슈·알려진 취약점·경고 0건
+- migration drift·`git diff --check`: 문제 0건, CSS 중괄호 987/987
+
+### 2026-07-13 신규 세 기능 추가 전 통합 품질 게이트
 
 - Django 비계측 전체 tests: **170개 통과 / 102.496초 / system check 문제 0건**
 - Coverage 계측 실행: **170개 통과 / 103.560초 / 4,222 statements / 248 miss / 94%**

@@ -1,6 +1,6 @@
 import logging
 
-from .models import Report
+from .models import Report, ReportImageEvidence
 
 security_logger = logging.getLogger("tiny_market.security")
 
@@ -14,7 +14,10 @@ def delete_listing_image_unless_evidence(storage, name: str) -> bool:
     """
     if not name:
         return False
-    if Report.objects.filter(listing_image_name_snapshot=name).exists():
+    if (
+        Report.objects.filter(listing_image_name_snapshot=name).exists()
+        or ReportImageEvidence.objects.filter(storage_name=name).exists()
+    ):
         security_logger.info("report_evidence_image_retained name=%s", name)
         return False
     try:

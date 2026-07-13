@@ -109,6 +109,24 @@
     {% endif %}
   </form>
 
+  {% if user.is_authenticated %}
+    <div class="saved-search-bar">
+      {% if query or selected_category or selected_region %}
+        <form method="post" action="{% url 'market:saved_search_create' %}">
+          {% csrf_token %}
+          <input type="hidden" name="query" value="{{ query }}">
+          <input type="hidden" name="category" value="{{ selected_category }}">
+          <input type="hidden" name="region" value="{{ selected_region }}">
+          <button class="button button-outline" type="submit">이 검색 조건 알림 받기</button>
+        </form>
+      {% else %}
+        <p>검색어·카테고리·지역을 적용하면 새 상품 알림으로 저장할 수 있어요.</p>
+      {% endif %}
+      <a href="{% url 'market:saved_search_list' %}">저장한 검색 관리</a>
+      <a href="{% url 'market:notification_list' %}">가격 하락·새 상품 알림</a>
+    </div>
+  {% endif %}
+
   {% if page_obj %}
     <div class="result-meta">
       <p><strong>{{ page_obj.paginator.count }}</strong>개의 물건을 찾았어요</p>

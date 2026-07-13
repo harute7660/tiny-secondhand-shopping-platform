@@ -35,7 +35,22 @@
       {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
       {% for field in form.visible_fields %}
         <div class="field-group{% if field.errors %} field-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} checkbox-field{% endif %}{% if field.field.widget.input_type == 'file' %} upload-field{% endif %}">
-          {% if field.field.widget.input_type == 'checkbox' %}
+          {% if field.name == 'remove_extra_images' %}
+            <fieldset class="choice-fieldset">
+              <legend>{{ field.label }}</legend>
+              <div class="existing-extra-gallery" aria-label="현재 추가 사진">
+                {% for extra in form.existing_extra_images %}
+                  <img src="{% url 'market:listing_extra_image' listing.pk extra.pk %}" alt="현재 추가 상품 사진 {{ forloop.counter }}">
+                {% endfor %}
+              </div>
+              {{ field }}
+            </fieldset>
+          {% elif field.name == 'defects' %}
+            <fieldset class="choice-fieldset">
+              <legend>{{ field.label }}</legend>
+              {{ field }}
+            </fieldset>
+          {% elif field.field.widget.input_type == 'checkbox' %}
             <div class="checkbox-line">{{ field }}<label for="{{ field.id_for_label }}">{{ field.label }}</label></div>
           {% else %}
             <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required-mark" aria-label="필수">*</span>{% endif %}</label>

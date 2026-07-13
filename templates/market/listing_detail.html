@@ -21,6 +21,13 @@
         {% endif %}
         <span class="status-pill status-{{ listing.status|lower }}">{{ listing.get_status_display|default:listing.status }}</span>
       </div>
+      {% if listing.extra_images.all %}
+        <div class="detail-gallery" aria-label="추가 상품 사진">
+          {% for extra in listing.extra_images.all %}
+            <img src="{% url 'market:listing_extra_image' listing.pk extra.pk %}" alt="{{ listing.title }} 추가 사진 {{ forloop.counter }}" loading="lazy">
+          {% endfor %}
+        </div>
+      {% endif %}
       <div class="detail-trust-note"><span aria-hidden="true">✓</span><p><strong>상품 정보를 꼭 확인하세요</strong><small>상태·하자·거래 방법을 확인한 뒤 대화를 시작해 주세요.</small></p></div>
     </div>
 
@@ -41,7 +48,7 @@
       <p class="detail-price"><strong>{{ listing.price_points }}</strong><span>포인트</span></p>
       <div class="seller-row">
         <span class="seller-avatar" aria-hidden="true">{{ listing.seller.username|first|upper }}</span>
-        <div><span>판매자</span><strong><a href="{% url 'accounts:public_profile' listing.seller.username %}">{{ listing.seller.username }}</a></strong><small>{{ listing.seller.date_joined|date:"Y년 m월" }} 가입 · 판매 완료 {{ seller_completed_count }}건</small></div>
+        <div><span>판매자</span><strong><a href="{% url 'accounts:public_profile' listing.seller.username %}">{{ listing.seller.username }}</a></strong><small>{{ listing.seller.date_joined|date:"Y년 m월" }} 가입 · 상호 확인 거래 {{ seller_completed_count }}건{% if seller_average_rating %} · 평균 {{ seller_average_rating|floatformat:1 }}점{% endif %}</small></div>
         {% if listing.created_at %}<time datetime="{{ listing.created_at|date:'c' }}">{{ listing.created_at|timesince }} 전 등록</time>{% endif %}
       </div>
 
@@ -56,11 +63,22 @@
         <p>{{ listing.description|default:"판매자가 작성한 설명이 없습니다." }}</p>
       </div>
 
+      <div class="defect-summary">
+        <h2>하자 체크리스트</h2>
+        <p class="defect-disclosure">{{ listing.get_defect_disclosure_display }}</p>
+        {% if listing.defect_disclosure == 'PRESENT' %}
+          <ul>
+            {% for defect in listing.defects.all %}<li>{{ defect.get_code_display }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+        {% if listing.defect_details %}<p>{{ listing.defect_details|linebreaksbr }}</p>{% endif %}
+      </div>
+
       <div class="detail-actions">
         {% if user == listing.seller %}
           <a class="button button-outline" href="{% url 'market:my_listings' %}">내 상품 목록</a>
-          {% if listing.status == 'ACTIVE' or listing.status == 'RESERVED' %}<a class="button button-primary" href="{% url 'market:listing_update' listing.pk %}">상품 정보 수정</a>{% endif %}
-          {% if listing.status != 'BLOCKED' and listing.status != 'DELETED' %}<a class="button button-danger-outline" href="{% url 'market:listing_delete' listing.pk %}">상품 삭제</a>{% endif %}
+          {% if not has_active_trade and listing.status == 'ACTIVE' or not has_active_trade and listing.status == 'RESERVED' %}<a class="button button-primary" href="{% url 'market:listing_update' listing.pk %}">상품 정보 수정</a>{% endif %}
+          {% if not has_active_trade and listing.status != 'BLOCKED' and listing.status != 'DELETED' %}<a class="button button-danger-outline" href="{% url 'market:listing_delete' listing.pk %}">상품 삭제</a>{% endif %}
         {% elif user.is_authenticated and can_contact %}
           <form method="post" action="{% url 'market:conversation_start' listing.pk %}" class="grow-form">
             {% csrf_token %}
@@ -73,13 +91,16 @@
         {% endif %}
       </div>
 
-      {% if user == listing.seller and listing.status != 'BLOCKED' and listing.status != 'DELETED' %}
+      {% if user == listing.seller and has_active_trade %}
+        <div class="form-alert" role="status"><p>거래 완료 확인이 진행 중이거나 완료되어 상품 정보와 상태를 임의로 바꿀 수 없습니다.</p></div>
+      {% endif %}
+
+      {% if user == listing.seller and not has_active_trade and listing.status == 'ACTIVE' or user == listing.seller and not has_active_trade and listing.status == 'RESERVED' %}
         <form method="post" action="{% url 'market:listing_status_update' listing.pk %}" class="listing-status-actions" aria-label="판매 상태 변경">
           {% csrf_token %}
           <span>판매 상태 변경</span>
           {% if listing.status != 'ACTIVE' %}<button type="submit" name="status" value="ACTIVE">판매 중으로</button>{% endif %}
           {% if listing.status == 'ACTIVE' %}<button type="submit" name="status" value="RESERVED">예약 중으로</button>{% endif %}
-          {% if listing.status != 'SOLD' %}<button type="submit" name="status" value="SOLD">판매 완료로</button>{% endif %}
         </form>
       {% elif user == listing.seller and listing.status == 'BLOCKED' %}
         <div class="form-alert" role="status"><p>운영 정책 검토로 차단된 상품입니다. 관리자를 통해 상태를 확인하세요.</p></div>

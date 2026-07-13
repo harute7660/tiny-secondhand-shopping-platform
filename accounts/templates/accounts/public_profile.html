@@ -27,13 +27,27 @@
     {% else %}
       <p>아직 작성된 소개글이 없습니다.</p>
     {% endif %}
+
+    <section class="profile-review-section" aria-labelledby="review-title">
+      <div class="profile-review-heading">
+        <div><h2 id="review-title">상호 확인 거래 후기</h2><p>상품명·가격·지역은 공개하지 않습니다.</p></div>
+        <strong>{% if review_average %}{{ review_average|floatformat:1 }} / 5 · {{ review_count }}개{% else %}아직 후기 없음{% endif %}</strong>
+      </div>
+      {% if reviews %}
+        <div class="profile-review-list">
+          {% for review in reviews %}
+            <article><span>{{ review.rating }} / 5</span><p>{{ review.body|linebreaksbr }}</p><small>{{ review.writer_role }}가 작성 · <time datetime="{{ review.created_at|date:'c' }}">{{ review.created_at|date:"Y.m.d" }}</time></small></article>
+          {% endfor %}
+        </div>
+      {% else %}<p>양측이 거래 완료를 확인한 뒤 작성된 후기가 아직 없습니다.</p>{% endif %}
+    </section>
   </article>
 
   <aside class="form-aside" aria-label="프로필 개인정보 안내">
     <div class="tip-card">
       <span class="tip-number" aria-hidden="true">i</span>
       <h2>공개 범위</h2>
-      <p>이 화면에는 사용자명과 소개글만 표시하며 이메일과 계정 권한 정보는 공개하지 않습니다.</p>
+      <p>이 화면에는 사용자명·소개글과 상호 확인 거래의 후기만 표시하며 이메일·상품·가격·지역·계정 권한 정보는 공개하지 않습니다.</p>
     </div>
   </aside>
 </section>
