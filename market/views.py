@@ -16,11 +16,13 @@ from django.db.models import Avg, OuterRef, Q, Subquery
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from accounts.models import UserBlock
 
+from .evidence import EvidenceCaptureError, ensure_trade_evidence
 from .forms import (
     ListingForm,
     MessageForm,
@@ -279,13 +281,6 @@ def home(request: HttpRequest) -> HttpResponse:
     if region:
         listings = listings.filter(region__icontains=region)
 
-    if request.GET.get("mine") == "1" and request.user.is_authenticated:
-        listings = (
-            Listing.objects.filter(seller=request.user)
-            .exclude(status=Listing.Status.DELETED)
-            .select_related("seller")
-        )
-
     sort = request.GET.get("sort", "newest")
     order_by = SORT_FIELDS.get(sort)
     if order_by is None:
@@ -342,9 +337,21 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
     listing = _detail_listing(request, pk)
     is_favorite = False
     can_contact = False
+    has_pending_trade = Trade.objects.filter(
+        listing=listing,
+        status=Trade.Status.PENDING_BUYER,
+    ).exists()
+    has_completed_trade = Trade.objects.filter(
+        listing=listing,
+        status=Trade.Status.COMPLETED,
+    ).exists()
     if request.user.is_authenticated:
         is_favorite = Favorite.objects.filter(user=request.user, listing=listing).exists()
-        can_contact = can_users_interact(request.user, listing.seller, listing)
+        can_contact = (
+            listing.status in CONTACTABLE_STATUSES
+            and not has_completed_trade
+            and can_users_interact(request.user, listing.seller, listing)
+        )
     seller_completed_count = Trade.objects.filter(
         conversation__seller=listing.seller,
         status=Trade.Status.COMPLETED,
@@ -355,10 +362,7 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
         direction=Review.Direction.BUYER_TO_SELLER,
         visibility=Review.Visibility.PUBLIC,
     ).aggregate(average=Avg("rating"))
-    has_active_trade = Trade.objects.filter(
-        listing=listing,
-        status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
-    ).exists()
+    has_active_trade = has_pending_trade or has_completed_trade
     return render(
         request,
         "market/listing_detail.html",
@@ -369,6 +373,8 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
             "seller_completed_count": seller_completed_count,
             "seller_average_rating": seller_review_summary["average"],
             "has_active_trade": has_active_trade,
+            "has_pending_trade": has_pending_trade,
+            "has_completed_trade": has_completed_trade,
         },
     )
 
@@ -527,8 +533,17 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
             return _rate_limited("이미지 처리 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
         if not _post_fields_within(
             request,
-            {"title": 150, "description": 5_000, "region": 100},
+            {"title": 150, "description": 5_000, "region": 100, "revision": 64},
         ):
+            return _invalid_request()
+        revision_values = request.POST.getlist("revision")
+        if len(revision_values) != 1 or not revision_values[0].strip():
+            security_logger.warning(
+                "listing_revision_rejected actor=%s listing=%s count=%s",
+                request.user.pk,
+                listing.pk,
+                len(revision_values),
+            )
             return _invalid_request()
     form = ListingForm(request.POST or None, request.FILES or None, instance=listing)
     if request.method == "POST" and form.is_valid():
@@ -553,9 +568,9 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
                     status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
                 ).exists():
                     raise PermissionDenied
-                submitted_revision = form.cleaned_data.get("revision")
+                submitted_revision = form.cleaned_data["revision"]
                 current_revision = locked.updated_at.isoformat(timespec="microseconds")
-                if submitted_revision and submitted_revision != current_revision:
+                if submitted_revision != current_revision:
                     security_logger.info(
                         "listing_stale_update_rejected actor=%s listing=%s",
                         request.user.pk,
@@ -692,7 +707,7 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
     )
     if Trade.objects.filter(
         listing=listing,
-        status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+        status=Trade.Status.PENDING_BUYER,
     ).exists():
         raise PermissionDenied
     if request.method == "POST":
@@ -708,9 +723,31 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
                 raise PermissionDenied
             if Trade.objects.filter(
                 listing=listing,
-                status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+                status=Trade.Status.PENDING_BUYER,
             ).exists():
                 raise PermissionDenied
+            completed_trade = (
+                Trade.objects.select_for_update()
+                .filter(listing=listing, status=Trade.Status.COMPLETED)
+                .first()
+            )
+            if completed_trade is not None:
+                try:
+                    # Migration-safe fallback for completed rows created before
+                    # trade evidence snapshots existed. Completed listings are
+                    # otherwise immutable, so this still captures their sale state.
+                    ensure_trade_evidence(completed_trade, listing)
+                except EvidenceCaptureError:
+                    security_logger.exception(
+                        "trade_evidence_archive_capture_failed trade=%s listing=%s",
+                        completed_trade.pk,
+                        listing.pk,
+                    )
+                    messages.error(
+                        request,
+                        "거래 증거를 안전하게 보존하지 못해 상품을 숨기지 않았습니다.",
+                    )
+                    return redirect("market:listing_detail", pk=listing.pk)
             old_image_name = listing.image.name if listing.image else ""
             storage = listing.image.storage
             extra_image_names = list(
@@ -719,9 +756,29 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
                 .values_list("image", flat=True)
             )
             ListingImage.objects.filter(listing=listing).delete()
+            ListingDefect.objects.filter(listing=listing).delete()
             listing.status = Listing.Status.DELETED
             listing.image = ""
-            listing.save(update_fields=("status", "image", "updated_at"))
+            # Keep the Listing row as the immutable anchor for protected
+            # Trade/Review records, while removing user-authored free text and
+            # location details from ordinary presentation surfaces.
+            listing.title = "숨김 처리된 상품"
+            listing.description = ""
+            listing.region = ""
+            listing.defect_disclosure = Listing.DefectDisclosure.UNKNOWN
+            listing.defect_details = ""
+            listing.save(
+                update_fields=(
+                    "status",
+                    "image",
+                    "title",
+                    "description",
+                    "region",
+                    "defect_disclosure",
+                    "defect_details",
+                    "updated_at",
+                )
+            )
             for filename in dict.fromkeys([old_image_name, *extra_image_names]):
                 if not filename:
                     continue
@@ -731,7 +788,10 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
         security_logger.info(
             "listing_soft_deleted actor=%s listing=%s", request.user.pk, listing.pk
         )
-        messages.success(request, "상품이 목록에서 삭제되었습니다.")
+        messages.success(
+            request,
+            "상품을 목록에서 숨기고 공개용 설명·지역·사진 정보를 정리했습니다.",
+        )
         return redirect("market:home")
     return render(request, "market/confirm_delete.html", {"listing": listing})
 
@@ -1272,7 +1332,11 @@ def user_block_toggle(request: HttpRequest, user_id: int) -> HttpResponse:
         block.delete()
         messages.info(request, "사용자 차단을 해제했습니다.")
     next_url = request.POST.get("next", "")
-    if next_url.startswith("/") and not next_url.startswith("//"):
+    if url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
         return redirect(next_url)
     return redirect("market:conversation_list")
 

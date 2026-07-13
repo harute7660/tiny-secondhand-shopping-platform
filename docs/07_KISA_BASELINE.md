@@ -1,13 +1,14 @@
-# KISA 소프트웨어 개발보안 기준 적용표
+﻿# KISA 소프트웨어 개발보안 기준 적용표
 
 ## 기준과 적용 방법
 
-- 공식 문서: 소프트웨어 개발보안 가이드(2021.12.29)
-- Python 보조 문서: Python 시큐어코딩 가이드(2023년 개정본)
+- 2026-07-13 재확인한 KISA [가이드라인 목록](https://www.kisa.or.kr/2060204)은 목록 페이지 자체의 최종수정일이 2026-07-06일 뿐, 별도 **“2026 시큐어코딩 가이드” 판본명**을 뜻하지 않는다.
+- 공통 기준 문서: [소프트웨어 개발보안 가이드(2021.12.29, postSeq=5)](https://www.kisa.or.kr/2060204/form?lang_type=KO&page=1&postSeq=5)
+- Python 보조 문서: [Python 시큐어코딩 가이드(2023년 개정본, postSeq=13)](https://www.kisa.or.kr/2060204/form?lang_type=KO&menuSeq=4135&page=&postSeq=13)
 - 구현단계 기준: 7개 영역, 49개 보안약점
 - Python 가이드 상세 설명 제외 3개: 메모리 버퍼 오버플로우, 해제된 자원 사용, 초기화되지 않은 변수 사용
 
-`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. SEC-042~047 최신 결합 표적 40개가 17.697초에 system check 0건으로 통과했다. 최종 전체 Django tests는 219 / 219 / 157.165초, Coverage는 219 / 219 / 162.533초·6,037 statements / 354 miss / 94%이며 Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff도 모두 통과했다. 206개·170개 등 이전 수치는 역사적 스냅샷으로만 보존한다.
+`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. SEC-048~061 뒤 전체 Django tests **251개/147.753초**, Coverage **6,922 statements / 385 miss / 94%**와 정적·공급망·운영 게이트를 통과했다. 존재하지 않는 2026 판본이나 실행하지 않은 외부 검사를 인용하지 않는다.
 
 ## 1. 입력데이터 검증 및 표현 - 17개
 
@@ -108,8 +109,10 @@
 | SEC-042~044 직접 분기 | **16개 통과 / 17.393초 / system check 문제 0건** | 공개 후기 visibility 집계, slash PII 입력검증, Admin stale 상태 경합 |
 | SEC-045 직접 분기 | `MultipartUploadLimitTests` **7개 통과 / 0.023초** | CSRF 전 요청 크기, 실제 chunk 누적, 시스템 자원 접근·안전 오류 응답 |
 | SEC-042~047 최신 결합 직접 분기 | **40개 통과 / 17.697초 / system check 문제 0건** | 후기 공개·PII, Admin stale, multipart 자원, 하자 조건부 UI·서버 모순 거부·stale 정규화, 거래 CTA 정합성 |
-| 변경 후 전체 suite·Coverage | **219 / 219 / 157.165초**, 계측 **219 / 219 / 162.533초·6,037 statements / 354 miss / 94%** | 모든 보안·기능 회귀의 최종 로컬 통합 결과 |
-| 변경 후 정적·공급망·운영 | **Ruff lint 통과·46개 파일 format 일치, Bandit 0건, pip-audit 0건, Django check·deploy warning 0건, migration 변경 없음, Node syntax·diff PASS** | 코드·의존성·운영설정·스키마 일관성 최종 로컬 게이트 |
+| SEC-048 전 전체 suite·Coverage | **219 / 219 / 157.165초**, 계측 **219 / 219 / 162.533초·6,037 statements / 354 miss / 94%** | 직전 확정 로컬 통합 기준선 |
+| SEC-048 전 정적·공급망·운영 | **Ruff lint 통과·46개 파일 format 일치, Bandit 0건, pip-audit 0건, Django check·deploy warning 0건, migration 변경 없음, Node syntax·diff PASS** | 직전 확정 로컬 게이트 |
+| 현재 최종 감사 작업트리 | **251 / 251 / 147.753초**, Coverage **6,922 statements / 385 miss / 94%** | SEC-048~061 신규 회귀 포함 |
+| 현재 정적·공급망·운영 | Ruff 50 files PASS, Bandit 8,082 lines/0, pip check·두 lock audit PASS, check/deploy·migration·JS·CSS·diff·secret PASS | 로컬 최종 게이트 |
 | 현재 구조·CSS | **웜톤·하자 오류 UI CSS 중괄호 1112/1112** | 1440×1000·320×800 overflow 0, 주요 조작 44px 이상, 브라우저 console warning/error 0건 |
 
 ### 2026-07-12 SEC-031·032 발견 전 스냅샷
@@ -127,9 +130,9 @@
 | SHA-256 runtime lock | `requirements.lock` 생성·CI `--require-hashes` | 코드 다운로드 무결성 |
 | CI·CodeQL·Dependabot | 구성·commit SHA pin 로컬 검토 | 실제 GitHub 실행 결과는 최초 push 후 확인 |
 
-이 과거 결과는 보존용 실행 기록이다. 이후 SEC-031~041의 직접 분기와 이미지 첨부 UI, 확장 기능 표적 36개를 거쳐 최종 전체 219개·94% coverage·Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff로 다시 확인했다.
+이 과거 결과는 보존용 실행 기록이다. 이후 SEC-031~047의 직접 분기와 이미지 첨부 UI, 확장 기능 표적을 거쳐 전체 219개·94% coverage와 정적·공급망·운영 게이트를 확인했다. 이 결과는 SEC-048~061 전 기준선이며 현재 후속 변경의 재실행 결과로 갱신해야 한다.
 
-판매자의 `ACTIVE`↔`RESERVED`, 판매자 완료 요청 뒤 구매자 확인에 의한 `SOLD`, 완료 거래 후 mutation 차단과 stale update 방어는 구현·검증했다. 그러나 결제·배송·환불까지 포함한 별도 `Order` 상태 머신은 PDF 최소 요구사항이 아니며 구현되지 않았으므로 “동일 주문 동시 수락”을 검증했다고 주장하지 않는다. 실제 시간·상태 증적은 후기 자격용 `Trade`, 상품 row lock·허용 전이와 DEMO POINT 조건부 차감·append-only 이중 원장·멱등성 테스트로 한정한다.
+판매자의 `ACTIVE`↔`RESERVED`, 판매자 완료 요청 뒤 구매자 확인에 의한 `SOLD`, 완료 거래 후 수정·재판매·새 대화 차단, 필수 revision과 참조 보존형 공개정보 정리는 구현했다. 그러나 결제·배송·환불까지 포함한 별도 `Order` 상태 머신은 PDF 최소 요구사항이 아니며 구현되지 않았으므로 “동일 주문 동시 수락”을 검증했다고 주장하지 않는다. 실제 시간·상태 증적은 후기 자격용 `Trade`, 상품 최신 상태 재검사와 DEMO POINT 조건부 차감·append-only 이중 원장·멱등성 테스트로 한정한다.
 
 ## 설계단계 핵심 적용
 
@@ -146,5 +149,5 @@ KISA 설계단계 기준은 구현 체크리스트와 별개로 다음 영역을
 
 - 프로필·마이페이지: 활성 일반 사용자의 `username`·`bio`만 공개하고 `ProfileForm`은 `bio`만 허용한다. 소개글 500자·autoescape, 현재 비밀번호를 요구하는 Django `PasswordChangeForm`, validators, 256자 사전 제한, 시간당 10회, `update_session_auth_hash()`를 적용해 인가·Mass Assignment·XSS·hash DoS를 검토했다.
 - 전체 채팅: 동기식 Django·채널 계층 부재에서 WebSocket/SSE 연결 고갈과 새 의존성을 피하기 위해 제한된 2초 polling을 사용한다. 세션 sender, POST CSRF, 서명 cursor, 응답 100건, 본문 1,000자, 조회 40/분·송신 10/분, `textContent`, 양방향 차단 필터, hidden 중단·backoff·DOM 200개를 적용했다.
-- 신고 임계치 자동조치: 서로 다른 3명의 OPEN 신고만 원자적으로 집계하고 자기·판매자 신고를 제외한다. staff·superuser를 보호하고 상품은 영구삭제 대신 임시 차단하며 감사로그·관리자 복구를 제공한다.
+- 신고 임계치 자동조치: 가입 7일 경과·활성·미정지인 서로 다른 3명의 OPEN 신고만 원자 집계하고 신규 신고도 증거로 보존한다. 자기·판매자 신고를 제외하고 staff·superuser를 보호하며 상품은 영구삭제 대신 임시 차단하고 감사로그·관리자 복구를 제공한다.
 - 운영 잔여 위험: SQLite·`LocMemCache`는 각각 PostgreSQL·공유 원자적 Redis로 전환해야 한다. polling 규모·cache 장애를 부하 시험하고 신고 공모·오탐 이의제기, 사용자 정지 복구 승인, 메시지·신고 증거 보존·파기 기간을 정책으로 확정해야 한다.

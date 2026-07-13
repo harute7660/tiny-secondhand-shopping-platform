@@ -148,7 +148,7 @@ class LoginSecurityTests(TestCase):
 
         self.assertRedirects(response, reverse("market:home"))
 
-    def test_five_failures_lock_account_scope(self):
+    def test_account_failure_marker_does_not_block_valid_credentials(self):
         for _index in range(5):
             response = self.client.post(
                 reverse("accounts:login"),
@@ -168,8 +168,11 @@ class LoginSecurityTests(TestCase):
             {"username": "alice", "password": PASSWORD},
             REMOTE_ADDR="203.0.113.10",
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertRedirects(response, reverse("market:home"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+        self.assertFalse(LoginAttempt.objects.filter(scope=LoginAttempt.Scope.ACCOUNT).exists())
+        network_attempt.refresh_from_db()
+        self.assertEqual(network_attempt.failures, 5)
 
     def test_successful_login_clears_only_account_attempt_record(self):
         self.client.post(
@@ -186,7 +189,7 @@ class LoginSecurityTests(TestCase):
         )
         self.assertFalse(LoginAttempt.objects.filter(scope=LoginAttempt.Scope.ACCOUNT).exists())
         network_attempt = LoginAttempt.objects.get(scope=LoginAttempt.Scope.NETWORK)
-        self.assertEqual(network_attempt.failures, 2)
+        self.assertEqual(network_attempt.failures, 1)
 
     def test_successful_login_does_not_reset_network_attempt_counter(self):
         remote_address = "203.0.113.15"
@@ -225,7 +228,7 @@ class LoginSecurityTests(TestCase):
                 scope=LoginAttempt.Scope.NETWORK,
                 key_hash=primary_network_key,
             ).failures,
-            5,
+            4,
         )
 
         self.client.logout()
@@ -239,8 +242,25 @@ class LoginSecurityTests(TestCase):
                 scope=LoginAttempt.Scope.NETWORK,
                 key_hash=primary_network_key,
             ).failures,
-            6,
+            5,
         )
+
+    @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+    def test_repeated_successes_do_not_consume_shared_network_failure_quota(self):
+        remote_address = "203.0.113.20"
+        self.user.set_password(PASSWORD)
+        self.user.save(update_fields=("password",))
+
+        for _index in range(35):
+            response = self.client.post(
+                reverse("accounts:login"),
+                {"username": "alice", "password": PASSWORD},
+                REMOTE_ADDR=remote_address,
+            )
+            self.assertRedirects(response, reverse("market:home"))
+            self.client.post(reverse("accounts:logout"))
+
+        self.assertFalse(LoginAttempt.objects.exists())
 
     @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
     def test_network_limit_bounds_new_account_attempt_rows_to_thirty(self):
@@ -322,7 +342,7 @@ class LoginSecurityTests(TestCase):
                 )
                 client = Client()
 
-                for _index in range(30):
+                for _index in range(5):
                     failure_response = client.post(
                         reverse("accounts:login"),
                         {"username": candidate, "password": "wrong-password"},
@@ -348,7 +368,7 @@ class LoginSecurityTests(TestCase):
                 )
 
         self.assertEqual(outcomes[0], outcomes[1])
-        self.assertEqual(outcomes[0], (302, reverse("market:home"), 6))
+        self.assertEqual(outcomes[0], (302, reverse("market:home"), 5))
 
     def test_expired_login_attempt_cleanup_removes_only_safe_stale_rows(self):
         now = timezone.now()
@@ -488,7 +508,7 @@ class AdminLoginSecurityTests(TestCase):
             password=PASSWORD,
         )
 
-    def test_admin_login_uses_account_and_network_throttling(self):
+    def test_admin_account_failure_marker_does_not_block_valid_credentials(self):
         for _index in range(5):
             response = self.client.post(
                 reverse("admin:login"),
@@ -503,8 +523,11 @@ class AdminLoginSecurityTests(TestCase):
             REMOTE_ADDR="203.0.113.60",
         )
 
-        self.assertEqual(response.status_code, 429)
-        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.admin.pk)
+        self.assertFalse(LoginAttempt.objects.filter(scope=LoginAttempt.Scope.ACCOUNT).exists())
+        network_attempt = LoginAttempt.objects.get(scope=LoginAttempt.Scope.NETWORK)
+        self.assertEqual(network_attempt.failures, 5)
 
     def test_successful_admin_login_clears_only_account_attempt(self):
         self.client.post(
@@ -523,7 +546,7 @@ class AdminLoginSecurityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(LoginAttempt.objects.filter(scope=LoginAttempt.Scope.ACCOUNT).exists())
         network_attempt = LoginAttempt.objects.get(scope=LoginAttempt.Scope.NETWORK)
-        self.assertEqual(network_attempt.failures, 2)
+        self.assertEqual(network_attempt.failures, 1)
 
     def test_authenticated_staff_post_cannot_clear_another_users_lock_records(self):
         victim = get_user_model().objects.create_user(

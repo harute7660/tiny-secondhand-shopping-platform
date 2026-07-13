@@ -1,4 +1,4 @@
-# 보안약점 발견·조치 대장
+﻿# 보안약점 발견·조치 대장
 
 보안약점을 보고서 분량을 위해 의도적으로 만들지 않는다. 요구사항 검토, 위협 모델링, 코드리뷰, 자동 검사 또는 수동 테스트에서 실제로 발견된 문제만 기록한다. 수정 전 취약 코드는 최종 브랜치에 남기지 않고 diff, 테스트 실패·성공 결과, 필요한 경우 마스킹한 화면으로 증명한다.
 
@@ -59,6 +59,20 @@
 | SEC-045 | multipart 전체 body 제한이 view/form 파싱 뒤에만 적용 | Medium | Mitigated | CSRF 전 21MiB 선차단·실제 chunk 누적 handler·안전 400 |
 | SEC-046 | 조건부 하자 입력의 stale·모순 상태와 불명확한 오류·제출 피드백 | Low | Fixed | 조건부 활성화·초기화, 서버 독립 검증·정규화, 오류 요약·제출 잠금 |
 | SEC-047 | 두 탭 상품 수정의 lost update와 상품 전체 거래·현재 대화 CTA 불일치 | Medium | Mitigated | hidden revision+잠근 `updated_at` 409, 다른 거래 CTA·상대 신원 비공개, 현재 대화 닫힘 기록 |
+| SEC-048 | 계정별 로그인 실패 잠금으로 타인의 정상 로그인을 막는 표적 DoS | High | Mitigated | 계정 실패는 사후 기록, 네트워크 사전 상한, 성공 요청 예약만 반환 |
+| SEC-049 | 신규 3계정 신고 공모로 상품·사용자를 즉시 자동 제한 | High | Mitigated | 가입 7일 경과·활성·미정지 신고자만 자동조치 집계, 신고 증거는 보존 |
+| SEC-050 | 상품 수정 revision 누락으로 lost-update 보호 선택적 우회 | Medium | Fixed | update Form 필수화, 누락·공백·중복 값을 파일 처리 전 400 거부 |
+| SEC-051 | 위조 multipart의 중복 하자 code가 DB UNIQUE 예외로 500 유발 | Medium | Fixed | Form 단계 중복 거부와 기존 데이터 불변 회귀 |
+| SEC-052 | 수동 prefix 검사 리다이렉트의 역슬래시·scheme 정규화 우회 가능성 | Medium | Fixed | Django host·scheme 검증으로 외부·network-path·역슬래시 변형 거부 |
+| SEC-053 | 공개 후기의 운영상 숨김 수단 부재와 직접 편집 위험 | Medium | Fixed | 본문 불변, 전용 hide/제한적 restore action·권한 재검사·감사 로그 |
+| SEC-054 | 구현되지 않은 원장 `REVERSAL` 종류·관계가 잘못된 내부 상태를 표현 | Medium | Fixed | 기존 반전 행 fail-closed 검사 후 필드·종류 제거 migration |
+| SEC-055 | 완료 상품을 숨길 수 없어 공개 설명·지역·사진을 불필요하게 계속 보유 | Medium | Mitigated | 거래 참조 행은 보존하고 공개용 설명·지역·사진·하자 정보 정리 |
+| SEC-056 | 거래 완료 요청 동시 INSERT의 조건부 UNIQUE 경쟁이 500을 만들 수 있음 | Medium | Fixed | 내부 savepoint·`IntegrityError` 재조회·동일 요청 재사용·타 거래 일반 오류 |
+| SEC-057 | 상품 multipart 요청이 view rate limit 전에 CSRF에서 body·파일 parsing | High | Mitigated | 인증 뒤·CSRF 전 사용자별 10회/시간 admission, 거부 body 미파싱 |
+| SEC-058 | 완료 상품 숨김이 분쟁 증거까지 잃게 만들 수 있음 | High | Fixed | 불변 거래 snapshot·이미지 SHA-256 evidence 보존, 공개 Listing 정리와 분리 |
+| SEC-059 | legacy 원장 반전 관계 migration의 조용한 데이터 손실 가능성 | Medium | Fixed | kind와 `reversal_of` 관계 모두 fail-closed 검사 |
+| SEC-060 | 후기 restore action의 부분 복구·상태 혼합 가능성 | Medium | Fixed | 쌍방 방향·상태·선택 수 row lock 검증 |
+| SEC-061 | 외부 Origin 브라우저 요청의 pre-CSRF upload quota 소모 가능성 | Low | Mitigated | Origin exact match·Fetch Metadata 검사 후 quota 차감 |
 
 ### SEC-001 - 신고 대상의 모델 검증 전 서버 바인딩 누락
 
@@ -466,9 +480,78 @@
 - KISA/CWE 연결: 경쟁조건·데이터 무결성·인가 결정의 최신 상태 검증, CWE-362·CWE-367. 다른 거래 상대의 식별정보 최소화는 개인정보 노출 경계와도 연결된다.
 - 영향: 마지막 요청이 조용히 이기면 먼저 저장한 가격·하자·제목이 사라지고 가격 하락 알림 event의 근거도 사용자의 의도와 어긋날 수 있다. 상품 전체의 활성 거래와 현재 대화의 거래를 구분하지 않으면 무관한 대화에 완료 CTA가 나타나 잘못된 요청을 유도하거나 진행 상대를 추론하게 할 수 있다.
 - 변경: 수정 GET에서 `updated_at` microseconds 값을 hidden `revision`으로 제공한다. POST transaction 안에서 상품 행을 잠근 뒤 최신 revision과 비교하고 다르면 어느 편집 필드·파일·하자·알림도 저장하지 않은 채 409와 일반 오류 요약·사진 재선택 안내를 반환한다. 거래 대화는 상품 전체 활성 거래를 한 번 조회한 뒤 현재 conversation과 일치하는 경우만 `active_trade`로 전달하며, 다른 대화의 활성 거래는 boolean 안내만 제공해 완료·후기 CTA와 상대 식별정보를 숨긴다. 현재 대화에 최근 `REJECTED`·`CANCELLED`가 있으면 그 상태·시각만 표시한다.
-- 검증: `test_stale_browser_revision_returns_conflict_without_overwrite`가 409·최신 제목 유지와 비저장을 확인했다. 거래 후기 회귀는 다른 대화의 진행 안내·CTA 비노출·신원 비공개와 현재 대화의 거절·취소 기록을 확인한다. 관련 네 테스트 class의 최신 결합 결과는 **40개 / 17.697초 / system check 0건**, Ruff PASS이며 변경 후 전체 Django tests도 **219 / 219 / 157.165초 / system check 0건**으로 통과했다.
-- 잔여 위험: 브라우저 폼은 revision을 항상 보내지만 기존 호환을 위해 revision이 없는 인증 소유자 요청까지 강제 거부하지 않는다. SQLite의 `select_for_update()`도 실질 행 잠금을 제공하지 않는다. 운영 API에서는 revision 또는 `If-Match`를 필수화하고 PostgreSQL에서 두 요청의 실제 경합을 재시험해야 한다.
-- 상태: **Mitigated**. 일반 브라우저의 lost update와 잘못된 CTA·상대 노출은 통제했지만 revision 누락 호환과 개발 DB 동시성 한계가 남는다.
+- 검증(SEC-048 이전 기준선): `test_stale_browser_revision_returns_conflict_without_overwrite`가 409·최신 제목 유지와 비저장을 확인했다. 거래 후기 회귀는 다른 대화의 진행 안내·CTA 비노출·신원 비공개와 현재 대화의 거절·취소 기록을 확인한다. 관련 네 테스트 class는 **40개 / 17.697초 / system check 0건**, Ruff PASS였고 당시 전체 Django tests도 **219 / 219 / 157.165초 / system check 0건**으로 통과했다. 최종 감사 결과는 아래 SEC-048~061 및 최종 게이트를 따른다.
+- 후속 변경: 최종 감사에서 revision 생략이 보호를 선택적으로 우회한다는 점을 SEC-050으로 분리했다. update Form에서 revision을 필수화하고 누락·공백·중복 token을 파일·폼 처리 전에 400으로 거부한다.
+- 잔여 위험: SQLite의 `select_for_update()`는 실질 행 잠금을 제공하지 않는다. 다중 사용자 운영 전 PostgreSQL에서 두 요청의 실제 경합을 재시험해야 한다.
+- 상태: **Mitigated**. 일반 브라우저의 lost update와 잘못된 CTA·상대 노출, revision 누락 우회는 통제했으며 개발 DB 동시성 한계가 남는다.
+
+## 2026-07-13 최종 구조·보안 감사 후속 조치
+
+### SEC-048~049 - 로그인 표적 잠금과 신규 계정 신고 공모
+
+- 발견: 로그인 실패 5회를 계정 단위 사전 거부에 사용하면 비밀번호를 모르는 공격자가 사용자명만으로 피해자의 정상 로그인을 막을 수 있었다. 또한 신규 계정 3개가 즉시 상품 차단·사용자 정지 임계치를 만들 수 있었다.
+- 변경과 이유: 계정 실패 표식은 인증 실패 뒤 기록하되 올바른 자격 증명을 사전 차단하지 않고, 네트워크 30회 상한으로 고비용 해시 작업을 제한했다. 자동 moderation은 가입 후 7일이 지난 활성·미정지 신고자만 집계하되 신규 계정 신고도 삭제하지 않고 OPEN 증거로 남긴다. 가용성과 증거 보존을 함께 지키기 위한 절충이다.
+- 검증 경계: 표적 계정 실패 뒤 정상 로그인, 반복 성공의 네트워크 quota 비소모, 신규 3계정 신고 미발동, 자격을 갖춘 3계정 발동 회귀가 추가되었다. 이번 최종 감사 작업트리의 전체 재실행 수치는 아직 확정 전이며 `13_FINAL_PROJECT_AUDIT_2026-07-13.md`에서 갱신한다.
+- 잔여 위험: 분산 운영은 Redis가 필요하고, 7일 이상 유지한 계정 공모를 탐지하는 평판·graph 분석과 이의제기 SLA는 없다.
+
+### SEC-050~052 - 수정 token·중복 하자·리다이렉트 정규화
+
+- 발견: 인증 소유자가 revision을 생략하면 optimistic lock 비교가 수행되지 않았고, 위조 multipart가 같은 하자 code를 반복하면 DB UNIQUE 예외로 500이 될 수 있었다. 차단 후 이동 경로의 문자열 prefix 검사는 브라우저·프록시의 역슬래시 정규화와 scheme 변형을 충분히 표현하지 못했다.
+- 변경과 이유: persisted Listing Form은 revision을 필수로 하고 view가 정확히 하나의 비공백 token을 파일 처리 전에 확인한다. 하자 code는 Form에서 중복을 명시적으로 거부한다. 이동 경로는 Django `url_has_allowed_host_and_scheme()`의 현재 host·HTTPS 문맥 검증으로 통일했다.
+- 검증: revision 누락·공백·중복 시 Form 미호출 400과 원본 불변, 중복 하자 오류와 기존 데이터 보존, `//`·역슬래시·외부 scheme 거부 및 정상 로컬 경로 허용 회귀를 추가했다.
+
+### SEC-053~056 - 후기 moderation·미완성 원장 상태·완료 상품 최소화·거래 요청 경쟁
+
+- 발견: 공개 후기의 악성 내용을 운영자가 숨길 좁은 경로가 없었고, 사용하지 않는 `REVERSAL` 종류·관계는 금액·계정 대응 불변조건 없이 잘못된 내부 상태를 표현했다. 완료 상품은 거래 참조 때문에 숨길 수 없어 설명·지역·사진·하자 정보를 계속 보유했다. 동시 완료 요청 INSERT는 조건부 UNIQUE 경쟁에서 500이 될 수 있었다.
+- 변경과 이유: 후기 본문·평점은 불변으로 두고 `change_review` 권한의 숨김·양방향 완료 후기 제한적 복구 action과 감사 로그만 추가했다. 기존 반전 행이 있으면 migration을 중단한 뒤 미완성 종류·필드를 제거한다. 완료 상품은 Listing 참조 행과 대화·거래·후기는 보존하되 공개 설명·지역·사진·하자 정보를 정리해 `DELETED`로 숨긴다. 거래 요청 INSERT는 내부 savepoint에서 경쟁을 잡고 동일 요청이면 기존 행을 재사용한다.
+- 잔여 위험: 증거 보존·파기 기간, 원장 보정 승인 workflow, PostgreSQL 실제 경쟁 부하와 후기 moderation 운영 절차는 배포 전에 확정해야 한다.
+
+### SEC-057 - 상품 multipart의 rate limit 전 body parsing
+
+- 발견: 상품 view의 등록·이미지 처리 rate limit은 `request.POST`·`request.FILES`가 만들어진 뒤 실행되므로, CSRF middleware가 먼저 대용량 multipart를 파싱하는 비용을 반복 요청으로 만들 수 있었다. 21MiB 누적 상한만으로는 허용 크기 이내의 고비용 요청 반복을 제한하지 못한다.
+- 변경과 이유: `AuthenticationMiddleware` 다음, `CsrfViewMiddleware` 전에 `MultipartAdmissionMiddleware`를 배치했다. 상품 등록·수정 multipart의 익명 요청은 403으로 거부하고, 인증 사용자의 POST는 cache 원자 `add/incr`로 10회/시간만 admission한다. 거부 시 `request.POST`·`FILES`·`body`를 읽지 않으며, 통과한 요청은 기존 CSRF·view quota·파일 sanitizer를 그대로 거친다.
+- 검증 경계: middleware 순서, 익명 POST/PUT/PATCH 미파싱, 등록·수정 11번째 요청 429 미파싱, cache 만료 경쟁의 원자 재시도, 비상품 multipart와 URL-encoded 로그인 정상 통과 회귀가 추가되었다.
+- 잔여 위험: application까지 도착한 요청만 제한한다. reverse proxy/server에서 request body·연결 수·업로드 속도·timeout·source-network·동시성 제한을 별도로 적용해야 하며, LocMemCache는 다중 인스턴스 공통 상한이 아니다.
+
+### SEC-058 - 완료 상품 숨김 시 분쟁 증거 손실 가능성
+
+- 발견 단계/방법: 완료 상품 공개 숨김 기능이 설명·지역·사진·하자 정보를 정리하면서, 이미 완료된 거래의 분쟁이나 사후 검토에 필요한 당시 상태까지 잃을 수 있는지 추적했다.
+- KISA/CWE 연결: 중요 데이터 보존과 무결성, 부적절한 데이터 수명주기 관리, CWE-200·CWE-345.
+- 영향: 개인정보 최소화를 위해 공개 상품 데이터를 지우는 조치가 분쟁 증거까지 제거하면, 후기·신고·관리자 검토에서 거래 당시 상품 상태를 재구성할 수 없다.
+- 변경: 판매자가 완료 요청을 만들 때 원자적 transaction 안에서 `TradeEvidence`와 `TradeImageEvidence`를 생성한다. 제목·설명·가격·카테고리·상태·지역·하자·사진 저장명·SHA-256을 snapshot으로 보존하고, evidence 모델은 update/delete/bulk update를 막는다. 완료 상품 archive는 공개 Listing 사진 row와 사용자 작성 공개 필드는 정리하되 private evidence 파일은 hash 검증 가능한 관리자 전용 endpoint로만 접근한다.
+- 검증: `market.test_trade_evidence`에서 snapshot 생성, 실패 시 rollback, 중복 요청 재사용, legacy 완료 상품 archive 전 fallback capture, 불변 모델, 관리자 전용 이미지 hash stream과 oracle 방지를 확인했다.
+- 잔여 위험: evidence 보존 기간, 법적 보존·파기 승인, 백업 lifecycle, 저장소 quota 정책은 운영 정책으로 확정해야 한다.
+- 상태: **Fixed with operational residual**. 공개 노출과 증거 보존을 분리했지만, 실제 서비스 전 보존 정책이 필요하다.
+
+### SEC-059 - legacy 원장 반전 관계 migration의 조용한 데이터 손실 가능성
+
+- 발견 단계/방법: `REVERSAL` 종류 제거 migration을 다시 검토하면서, kind 값은 제거 대상이 아니지만 `reversal_of` 관계만 남은 legacy row가 있으면 관계가 조용히 사라질 수 있음을 확인했다.
+- KISA/CWE 연결: 데이터 무결성·이관 검증, CWE-704·CWE-703.
+- 영향: 원장 데이터는 금액과 관계의 무결성이 중요하다. 미완성 반전 workflow를 제거하는 과정에서 관계가 사라지면 회계 증거가 훼손될 수 있다.
+- 변경: migration `0007`이 unsupported kind뿐 아니라 `reversal_of_id IS NOT NULL`도 fail-closed로 검사한다. 문제가 있으면 수동 정리 전 migration을 중단하고, 제거되는 field는 reversible하지 않음을 명시했다.
+- 검증: `market/test_transfer_migration_guards.py`에서 unsupported kind, legacy reversal link, 정상 row 통과를 확인했다.
+- 잔여 위험: 실제 운영 DB에서 legacy 데이터가 발견되면 별도 데이터 이관 계획과 감사 승인이 필요하다.
+- 상태: **Fixed**. 조용한 손실 대신 명시적 중단을 선택했다.
+
+### SEC-060 - 후기 관리자 restore action의 부분 복구·상태 혼합 가능성
+
+- 발견 단계/방법: 관리자 후기 hide/restore action을 검토하면서, 두 row 선택만으로 HIDDEN+PENDING 조합이나 한쪽 hidden 상태를 잘못 복구할 가능성을 확인했다.
+- KISA/CWE 연결: 권한 있는 기능의 상태 검증, 무결성, CWE-285·CWE-841.
+- 영향: 쌍방 후기 공개 규칙이 깨지면 평판 조작, 부분 공개, blind review 정책 위반으로 이어질 수 있다.
+- 변경: restore는 row lock 뒤 동일 trade의 정확한 seller→buyer, buyer→seller 방향을 확인한다. 한쪽만 hidden이면 상대가 PUBLIC일 때만 복구하고, 양쪽 hidden이면 두 row를 모두 선택해야 하며 HIDDEN+PENDING 조합은 거부한다.
+- 검증: `market/test_review_admin_moderation.py`에서 단일 복구, 양방향 복구, pending 혼합 거부, 본문·평점 admin 직접 수정 불가를 확인했다.
+- 잔여 위험: 관리자가 어떤 후기를 숨기고 복구했는지 운영 감사 로그를 중앙화하는 작업은 배포 전 보강 항목이다.
+- 상태: **Fixed**.
+
+### SEC-061 - 외부 브라우저 컨텍스트의 pre-CSRF upload quota 소모 가능성
+
+- 발견 단계/방법: `MultipartAdmissionMiddleware`가 CSRF보다 앞에 있어 body parsing을 막는 대신, 같은 사이트로 보이는 외부 Origin/Fetch Metadata 요청이 quota를 먼저 소모할 수 있는지 확인했다.
+- KISA/CWE 연결: CSRF·요청 출처 검증·자원 고갈, CWE-352·CWE-400.
+- 영향: 실제 상태 변경은 CSRF가 막더라도, quota가 먼저 줄어들면 피해자가 정상 상품 등록·수정을 일시적으로 못 할 수 있다.
+- 변경: 상품 multipart admission 전에 브라우저 요청의 `Origin`을 scheme+host exact match로 검증하고, `Sec-Fetch-Site`가 `same-site` 또는 `cross-site`이면 403으로 body parsing·quota 차감 전에 거부한다. malformed Origin도 동일하게 거부한다. metadata가 없는 비브라우저 요청은 기존 CSRF와 인증 경계가 계속 최종 판단한다.
+- 검증: `config/tests.py`에서 foreign/malformed Origin, Fetch-Site 거부, same-origin 허용과 quota 미소모를 확인했다.
+- 잔여 위험: 세션을 탈취한 비브라우저 클라이언트나 같은 origin 내부 XSS는 이 통제만으로 막지 못한다. XSS 방지·세션 보호·WAF/alert가 계속 필요하다.
+- 상태: **Mitigated**. 브라우저 기반 quota 소모 경로를 닫았다.
 
 ### UX-001 - 업로드 대상·오류·처리 중 피드백의 불일치
 
@@ -479,14 +562,14 @@
 
 ## 2026-07-13 신규 기능의 위협 검토와 예방 통제
 
-기능을 의도적으로 취약하게 만든 뒤 고친 것은 아니다. SEC-034~047은 기존 직접 상태 변경 경로와 신규 기능의 구현·적대적 테스트·후속 UI 감사에서 실제로 확인한 공격 경계를 기록했고, 아래 표는 구현 전에 식별해 같은 변경에서 예방한 추가 통제를 별도로 정리한다.
+기능을 의도적으로 취약하게 만든 뒤 고친 것은 아니다. SEC-034~056은 기존 직접 상태 변경 경로와 신규 기능의 구현·적대적 테스트·후속 구조·보안 감사에서 실제로 확인한 공격 경계를 기록했고, 아래 표는 구현 전에 식별해 같은 변경에서 예방한 추가 통제를 별도로 정리한다.
 
 | 기능 | 식별한 위험 | 적용한 통제 | 표적 증적 |
 |---|---|---|---|
 | 공개 프로필·소개글 | 이메일·권한·정지 사유 노출, Mass Assignment, 저장형 XSS | 활성 일반 사용자만, `username`·`bio` primitive 허용목록, 500자, Django autoescape, read-only 공개 route | 공개 허용목록·privileged 404·XSS·POST 405·forged privilege 필드 불변 |
 | 비밀번호 변경 | 현재 비밀번호 없이 탈취, 약한 비밀번호, oversized hash DoS, brute force, 변경 후 세션 혼동 | Django `PasswordChangeForm`·validators, 256자 사전 제한, 시간당 10회, sensitive POST, `update_session_auth_hash` | 현재 비밀번호·강도·사전 길이·rate·세션 회전 회귀 |
 | 로그인 회원 전체 채팅 | sender 위조, CSRF, XSS, 무제한 본문·조회·DOM, cursor 변조, 차단 우회 | session sender, POST+CSRF, 1,000자, 송신 10/분·조회 40/분, 서명 cursor·100건, `textContent`, DOM 200개, 양방향 차단 필터 | 인증·CSRF·sender·XSS·cursor tamper·limit·block·Admin read-only 회귀 |
-| 신고 누적 자동조치 | 중복·자기신고·공모에 의한 서비스거부, 관리자 lockout, 경합, 영구삭제 오탐 | 서로 다른 3 OPEN reporter, 조건부 UNIQUE, 자기/판매자 제외, target row lock·atomic, staff/superuser 보호, 임시 제재·감사로그·권한 복구 | 중복 미집계·3인 threshold·safe redirect·보호계정·자동복구·수동차단 불변 회귀 |
+| 신고 누적 자동조치 | 중복·자기신고·신규 계정 공모에 의한 서비스거부, 관리자 lockout, 경합, 영구삭제 오탐 | 가입 7일 경과·활성·미정지인 서로 다른 3 OPEN reporter, 조건부 UNIQUE, 자기/판매자 제외, target row lock·atomic, staff/superuser 보호, 임시 제재·감사로그·권한 복구 | 신규 3계정 증거만 보존·자격 3인 threshold·safe redirect·보호계정·자동복구·수동차단 불변 회귀 |
 | 쌍방 후기 | 단독 완료·buyer 위조·IDOR·보복 후기·PII/XSS | conversation-bound Trade, buyer confirm, server direction, blind publication, primitive 공개 허용목록 | 완료/거절·legacy SOLD·제3자·완료 mutation·사후 block·blind/unique·PII/XSS 회귀 |
 | 관심 검색·가격 하락 알림 | IDOR·비공개 metadata·소급·중복·rollback 유령·fan-out DoS | owner scope, 현재 공개성, 구조화 event, created-at 경계, recipient UNIQUE, on-commit, quota/batch | 소유자·private card·중복 조건·late subscription·locked price·exclude·idempotence 회귀 |
 | 다중 사진·하자·신고 증거 | multipart 파싱 전 자원고갈·파일 수/합계 우회·stale child/revision·orphan·상태/상세 모순·XSS·증거 소실·Admin child IDOR | CSRF 전 21MiB+실제 chunk 누적, client 5장/5MiB/20MiB 보조 검사, 거부 파일 미결합, locked child+revision scope, protected route, rollback cleanup, 조건부 UI+서버 defect allowlist·stale 정규화, multi-hash snapshot, report-scoped Admin | 최신 결합 표적 40개에서 preflight·multipart·foreign child·대표 승격·두 탭 409·하자 add→clear·XSS·삭제 보존·Admin scope 회귀 |
@@ -533,10 +616,21 @@
 - 실행 대상: `MultiImageDefectSecurityTests`, `MultipartUploadLimitTests`, `ListingAdminSecurityTests`, `TradeReviewSecurityTests`
 - 결과: **40개 통과 / 17.697초 / system check 문제 0건**, Ruff PASS
 - 포함 분기: `PUBLIC` 후기 집계, slash PII, stale Admin 보호, multipart 요청 상한, 거부 파일 미결합·사진 재선택, 6파일 generic 400, client 5장·5MiB·20MiB 검증, 썸네일-삭제 직접 결합·대표 승격 안내, 하자 add→clear, 두 탭 revision 409, 다른 거래 CTA·신원 비공개, 현재 대화 거절·취소 기록, 상품·메시지·후기 공통 오류·submit lock.
-- 후속 전체 Django tests: **219 / 219 통과 / 157.165초 / system check 문제 0건**
-- 후속 Coverage: **219 / 219 통과 / 162.533초 / 6,037 statements / 354 miss / 94%**
+- SEC-048 이전 후속 전체 Django tests: **219 / 219 통과 / 157.165초 / system check 문제 0건**
+- SEC-048 이전 후속 Coverage: **219 / 219 통과 / 162.533초 / 6,037 statements / 354 miss / 94%**
 - 후속 기타 게이트: **Ruff lint PASS·46 files formatted, Bandit 0, pip-audit 알려진 취약점 0, Django check·deploy warning 0, migration no changes, Node JavaScript syntax·`git diff --check` PASS**
 - 판정 경계: 로컬 자동 품질 게이트는 통과했지만 실제 키보드·스크린리더 인수와 운영 PostgreSQL·proxy 부하 시험을 대신하지 않는다.
+
+### 2026-07-14 SEC-048~061 최종 감사 품질 게이트
+
+- Django 전체 tests: **251 / 251 통과 / 147.753초 / system check 문제 0건**
+- Coverage: **6,922 statements / 385 miss / 94%**
+- Ruff: lint PASS, **50 files** format PASS
+- Bandit: **8,082 lines / 0 issues**; `pip check` PASS
+- pip-audit: runtime·development lock 각각 알려진 취약점 0건
+- Django check·운영 `check --deploy`: 문제·warning 0건; migration `0007`·`0008` 적용 성공, drift 없음
+- JavaScript 3 files syntax, CSS 중괄호 1112/1112, `git diff --check`, 현재 파일·Git 이력 high-confidence secret scan: PASS/일치 0건
+- 판정 경계: 현재 로컬 작업트리 회귀는 통과했다. 최종 SHA·Public GitHub·원격 CI·clean clone·PDF·전체 UAT와 운영 PostgreSQL/Redis/proxy 검증은 별도 미완료다.
 
 ### 2026-07-13 신규 세 기능 추가 전 통합 품질 게이트
 

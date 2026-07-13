@@ -1,6 +1,7 @@
 import logging
 import uuid
 import warnings
+from datetime import timedelta
 from io import BytesIO
 
 from django.apps import apps
@@ -12,6 +13,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .evidence import EvidenceCaptureError, ensure_trade_evidence
 from .models import (
     AUTOMATIC_LISTING_BLOCK_REASON,
     AUTOMATIC_REPORT_THRESHOLD,
@@ -42,6 +44,7 @@ ALLOWED_IMAGE_MIME_TYPES = {
 AUTOMATIC_LISTING_BLOCKED = "listing_blocked"
 AUTOMATIC_USER_SUSPENDED = "user_suspended"
 AUTOMATIC_PROTECTED_USER_SKIPPED = "protected_user_skipped"
+AUTOMATIC_REPORTER_MIN_AGE = timedelta(days=7)
 security_logger = logging.getLogger("tiny_market.security")
 
 
@@ -458,6 +461,17 @@ def request_trade_completion(actor, conversation_id):
                 existing.conversation_id == conversation.pk
                 and existing.status == Trade.Status.PENDING_BUYER
             ):
+                try:
+                    ensure_trade_evidence(existing, listing)
+                except EvidenceCaptureError as exc:
+                    security_logger.exception(
+                        "trade_evidence_capture_failed trade=%s listing=%s",
+                        existing.pk,
+                        listing.pk,
+                    )
+                    raise InvalidTradeError(
+                        "거래 증거를 안전하게 보존하지 못해 요청을 처리하지 않았습니다."
+                    ) from exc
                 return existing
             raise InvalidTradeError("이미 다른 거래 완료 절차가 진행 중입니다.")
 
@@ -470,7 +484,56 @@ def request_trade_completion(actor, conversation_id):
             seller_confirmed_at=now,
         )
         trade.full_clean()
-        trade.save()
+        try:
+            # The inner savepoint keeps the outer transaction usable when a
+            # second request wins the conditional unique constraint between
+            # our pre-check and INSERT (for example on a multi-worker DB).
+            with transaction.atomic():
+                trade.save()
+        except IntegrityError:
+            existing = Trade.objects.filter(
+                listing=listing,
+                status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
+            ).first()
+            if (
+                existing is not None
+                and existing.conversation_id == conversation.pk
+                and existing.status == Trade.Status.PENDING_BUYER
+            ):
+                try:
+                    ensure_trade_evidence(existing, listing)
+                except EvidenceCaptureError as exc:
+                    security_logger.exception(
+                        "trade_evidence_capture_failed trade=%s listing=%s",
+                        existing.pk,
+                        listing.pk,
+                    )
+                    raise InvalidTradeError(
+                        "거래 증거를 안전하게 보존하지 못해 요청을 처리하지 않았습니다."
+                    ) from exc
+                if listing.status == Listing.Status.ACTIVE:
+                    listing.status = Listing.Status.RESERVED
+                    listing.save(update_fields=("status", "updated_at"))
+                security_logger.info(
+                    "trade_completion_duplicate_reused actor=%s trade=%s",
+                    current_actor.pk,
+                    existing.pk,
+                )
+                return existing
+            if existing is not None:
+                raise InvalidTradeError("이미 다른 거래 완료 절차가 진행 중입니다.") from None
+            raise
+        try:
+            ensure_trade_evidence(trade, listing)
+        except EvidenceCaptureError as exc:
+            security_logger.exception(
+                "trade_evidence_capture_failed trade=%s listing=%s",
+                trade.pk,
+                listing.pk,
+            )
+            raise InvalidTradeError(
+                "거래 증거를 안전하게 보존하지 못해 요청을 처리하지 않았습니다."
+            ) from exc
         if listing.status == Listing.Status.ACTIVE:
             listing.status = Listing.Status.RESERVED
             listing.save(update_fields=("status", "updated_at"))
@@ -602,17 +665,29 @@ def cancel_trade_completion(actor, trade_id):
 
 
 def apply_automatic_report_threshold(report):
-    """Apply the three-distinct-reporter rule inside the caller's transaction."""
+    """Apply the three-eligible-reporter rule inside the caller's transaction.
+
+    Reports from new accounts are retained for moderator review, but they do not
+    immediately contribute to an automatic restriction.  This raises the cost of
+    the simplest three-account Sybil attack without hiding or discarding evidence.
+    """
     if not transaction.get_connection().in_atomic_block:
         raise RuntimeError("신고 임계치 처리는 원자적 트랜잭션 안에서 실행해야 합니다.")
     if report.status != Report.Status.OPEN:
         return None
 
     now = timezone.now()
+    reporter_joined_cutoff = now - AUTOMATIC_REPORTER_MIN_AGE
     if report.listing_id:
         listing = Listing.objects.select_for_update().get(pk=report.listing_id)
         distinct_reporters = (
-            Report.objects.filter(listing_id=listing.pk, status=Report.Status.OPEN)
+            Report.objects.filter(
+                listing_id=listing.pk,
+                status=Report.Status.OPEN,
+                reporter__date_joined__lte=reporter_joined_cutoff,
+                reporter__is_active=True,
+                reporter__is_suspended=False,
+            )
             .exclude(reporter_id=listing.seller_id)
             .values("reporter_id")
             .distinct()
@@ -647,7 +722,13 @@ def apply_automatic_report_threshold(report):
     user_model = get_user_model()
     target = user_model.objects.select_for_update().get(pk=report.target_user_id)
     distinct_reporters = (
-        Report.objects.filter(target_user_id=target.pk, status=Report.Status.OPEN)
+        Report.objects.filter(
+            target_user_id=target.pk,
+            status=Report.Status.OPEN,
+            reporter__date_joined__lte=reporter_joined_cutoff,
+            reporter__is_active=True,
+            reporter__is_suspended=False,
+        )
         .exclude(reporter_id=target.pk)
         .values("reporter_id")
         .distinct()

@@ -30,7 +30,7 @@
 
     <section class="profile-review-section" aria-labelledby="review-title">
       <div class="profile-review-heading">
-        <div><h2 id="review-title">상호 확인 거래 후기</h2><p>상품명·가격·지역은 공개하지 않습니다.</p></div>
+        <div><h2 id="review-title">상호 확인 거래 후기</h2><p>상품명·가격·지역은 공개하지 않습니다. 플랫폼 결제·신원 검증이 아니라 거래 당사자 양측의 완료 확인을 기준으로 합니다.</p></div>
         <strong>{% if review_average %}{{ review_average|floatformat:1 }} / 5 · {{ review_count }}개{% else %}아직 후기 없음{% endif %}</strong>
       </div>
       {% if reviews %}
@@ -47,7 +47,7 @@
     <div class="tip-card">
       <span class="tip-number" aria-hidden="true">i</span>
       <h2>공개 범위</h2>
-      <p>이 화면에는 사용자명·소개글과 상호 확인 거래의 후기만 표시하며 이메일·상품·가격·지역·계정 권한 정보는 공개하지 않습니다.</p>
+      <p>이 화면에는 사용자명·소개글과 상호 확인 거래의 후기만 표시하며 이메일·상품·가격·지역·계정 권한 정보는 공개하지 않습니다. 거래 수와 평점은 참고 정보이며 신원·결제 보증을 뜻하지 않습니다.</p>
     </div>
   </aside>
 </section>

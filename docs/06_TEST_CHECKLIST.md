@@ -1,6 +1,6 @@
-# 기능·보안 테스트 체크리스트
+﻿# 기능·보안 테스트 체크리스트
 
-`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. SEC-042~047 최신 결합 표적 40개가 17.697초에 system check 0건·Ruff PASS로 통과했고, 후속 변경 뒤 전체 Django tests **219 / 219 / 157.165초**, Coverage **219 / 219 / 162.533초·6,037 statements / 354 miss / 94%**와 정적·공급망·운영 게이트가 모두 통과했다.
+`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. SEC-048~061 변경 후 현재 작업트리는 **Django 251 / 251 / 147.753초**, Coverage **6,922 statements / 385 miss / 94%**와 정적·공급망·운영 게이트를 통과했다.
 
 ## 자동 검사 요약
 
@@ -14,9 +14,12 @@
 | SEC-042~047 최신 결합 표적 | 다중 이미지·multipart·Listing Admin·거래 후기 4개 class | 40개 전부 통과, 17.697초, system check 0건, Ruff PASS | 최신 직접 분기 완료 |
 | 직전 Django 전체 tests | `manage.py test --verbosity 1` | 206개 전부 통과, 114.641초, system check 0건 | 후속 변경 전 기준선 |
 | 직전 Coverage | `coverage run --source=accounts,community,config,market manage.py test` | 계측 206개 전부 통과, 115.434초, 5,778 statements / 343 miss / 94% | 후속 변경 전 기준선 |
-| 변경 후 전체 Django tests | `manage.py test --verbosity 1` | **219 / 219 통과, 157.165초, system check 0건** | 완료 |
-| 변경 후 Coverage | 전체 suite instrumentation | **219 / 219 통과, 162.533초, 6,037 statements / 354 miss / 94%** | 완료 |
-| 변경 후 정적·공급망·운영 게이트 | Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff | **Ruff PASS·46 files formatted; Bandit 0; 알려진 취약점 0; check/deploy 0; migration no changes; Node syntax·diff PASS** | 완료 |
+| SEC-048 이전 전체 Django tests | `manage.py test --verbosity 1` | **219 / 219 통과, 157.165초, system check 0건** | 직전 확정 기준선 |
+| SEC-048 이전 Coverage | 전체 suite instrumentation | **219 / 219 통과, 162.533초, 6,037 statements / 354 miss / 94%** | 직전 확정 기준선 |
+| SEC-048 이전 정적·공급망·운영 게이트 | Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff | **Ruff PASS·46 files formatted; Bandit 0; 알려진 취약점 0; check/deploy 0; migration no changes; Node syntax·diff PASS** | 직전 확정 기준선 |
+| 최종 전체 Django tests | `manage.py test --verbosity 1` | **251 / 251 통과, 147.753초, system check 0건** | 완료 |
+| 최종 Coverage | 전체 suite instrumentation | **6,922 statements / 385 miss / 94%** | 완료 |
+| 최종 정적·공급망·운영 게이트 | Ruff·Bandit·pip check/audit·Django check/deploy·migration·JS·CSS·diff·secret | **Ruff 50 files PASS; Bandit 8,082 lines/0; 두 lock 취약점 0; check/deploy 0; 0007 적용·drift 0; JS 3·CSS 1112/1112·diff PASS; secret 0** | 완료 |
 | Ruff | `ruff check .` 및 `ruff format --check .` | lint 오류 0건, 46개 파일 형식 일치 | 완료 |
 | Bandit | `bandit -r accounts community config market -c pyproject.toml -q` | 이슈 0건 | 완료 |
 | Django·migration | `manage.py check`, `makemigrations --check --dry-run` | system check 0건, 모델 변경 없음 | 완료 |
@@ -28,6 +31,15 @@
 | Runtime lock | SHA-256 포함 `requirements.lock` | `--require-hashes` 설치 검증 | 완료 |
 | Dev lock | `requirements-dev.lock` | 빈 대상 디렉터리에 `--require-hashes` 설치 성공 | 완료 |
 | CI·CodeQL | push/PR workflow·security-extended | 파일·commit SHA pin 검토 | GitHub 실행 예정 |
+
+## 최종 감사 필수 재검증
+
+- [x] 코드 대조: 로그인·상품·신고·후기·원장·redirect·거래 완료·삭제 경계와 migration을 직접 추적
+- [x] 신규 회귀 존재 확인: 로그인 표적 lockout, 신규 3계정 미발동, revision 누락·중복, 하자 중복, redirect 변형, 후기 hide/restore, 완료 상품 숨김, 거래 요청 경쟁
+- [x] 현재 작업트리 신규 회귀 포함 전체 251개 통과
+- [x] 현재 작업트리 Django 전체 suite·coverage 통과 — 251개/147.753초, 6,922 statements/385 miss/94%
+- [x] 현재 작업트리 Ruff·format·Bandit·pip check·두 lock pip-audit·check/deploy·migration·JS·CSS·diff·secret scan 통과
+- [ ] GitHub Actions·CodeQL 성공 URL과 대상 commit SHA 확인
 
 ## 사용자 요청 확장 기능
 
@@ -50,7 +62,7 @@
 - [x] 미처리 알림 이벤트의 제한형 수동 재처리 명령과 완료 거래 자동차단 복구 회귀 통과
 - [x] 오래 열린 Listing Admin 수정은 새 `BLOCKED`·차단 사유·처리 metadata를 덮어쓰지 못함
 - [~] 이번 세 기능의 전체 브라우저·키보드·스크린리더 인수와 PostgreSQL 경합·대량 fan-out 부하 검증은 후속 수행
-- [~] 3계정 Sybil 신고, 가격 반복 인상·인하 알림 스팸, 전체 채팅 메시지별 신고, `RESERVED` 요청 취소/거절 뒤 예약 해제 정책은 운영 보완 대상
+- [~] 신규 3계정은 7일 자동조치 유예를 적용했지만 성숙 계정 공모, 가격 반복 인상·인하 알림 스팸, 전체 채팅 메시지별 신고, `RESERVED` 요청 취소/거절 뒤 예약 해제 정책은 운영 보완 대상
 
 ## PDF 35페이지 최소 기능
 
@@ -66,11 +78,11 @@
 
 - 25~29페이지의 기능·화면·DB를 14개로 중복 제거한 최종 기능표는 `11_CORE_SUBMISSION_CHECKLIST.md`에 둔다.
 - 1차 **6 PASS / 3 PARTIAL / 5 FAIL**은 기능 추가 전 역사적 스냅샷이며 현재 판정은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`의 **14 PASS / 0 PARTIAL / 0 FAIL**이다.
-- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 이후 이미지 첨부 UI 직접 분기 26개, 확장 기능·보안 표적 36개를 각각 재검증했고 직전 통합 수치는 전체 206개·coverage 94%다. 후속 SEC-042~047 최신 결합 40개, 변경 후 전체 Django tests 219개·coverage 94%와 Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff도 통과했다. 전체 170개는 확장 기능 추가 전 역사적 스냅샷이다.
+- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 이후 이미지 첨부 UI 26개, 확장 기능·보안 표적 36개, SEC-042~047 결합 40개와 전체 219개·coverage 94%를 확인했다. 이는 SEC-048~061 전 역사적 기준선이며 현재 재실행 결과와 구분한다.
 - [x] TEST-SD001 공개 사용자 프로필과 소개글 조회 - username·bio allowlist, inactive/suspended/staff/superuser 비공개, XSS escape, read-only
 - [x] TEST-SD002 본인 소개글·비밀번호 변경 마이페이지 - bio mass assignment 방지, 현재 비밀번호·강도 validator·256자 사전상한·10회/시간·세션 회전
 - [x] TEST-SD003 실시간 전체 채팅 - 인증·CSRF·서버 발신자·XSS `textContent`·양방향 차단·signed cursor·요청/렌더 상한·rate·hidden pause/backoff·read-only Admin
-- [x] TEST-SD004 서로 다른 OPEN 신고자 3명 임계치 - 상품 자동 임시 차단·안전 redirect·자동 차단만 수동 복구, 일반 사용자 자동 정지·staff/superuser 보호·Admin 해제와 감사 log
+- [x] TEST-SD004 가입 7일 경과·활성·미정지인 서로 다른 OPEN 신고자 3명 임계치 - 신규 계정 신고는 증거만 보존, 자격 계정은 상품 자동 임시 차단·일반 사용자 자동 정지, staff/superuser 보호·Admin 해제와 감사 log
 - [x] TEST-SD005 `/listings/mine/` UI와 세션 소유자 격리, 수정·상태·삭제·이미지 유지/삭제/교체/모순/불량 업로드 전 흐름 - SEC-031 신규 회귀 통과
 
 ## 인증·인가
@@ -82,10 +94,10 @@
 - [x] TEST-A005 자기 자신과 대화·송금 불가 서비스 검증
 - [x] TEST-A006 요청의 `seller`, `sender`, 권한·상태 필드가 서버 결정을 바꾸지 못함
 - [x] TEST-A007 로그인 오류를 일반화해 계정 존재 여부 구분 방지
-- [x] TEST-A008 계정별 5회/15분과 네트워크별 원시도 30회/15분 로그인 제한, 성공 시 해당 account 상태만 삭제하고 network 누적 유지
+- [x] TEST-A008 계정별 실패 표식 5회/15분과 네트워크 원시도 30회/15분 제한, 계정 표식만으로 정상 자격 증명을 사전 잠그지 않고 성공 요청의 network 예약 1회만 반환
 - [x] TEST-A009 정지 계정 로그인 거부
 - [x] TEST-A010 신고 대상은 URL 문맥에서 검증 전에 서버 바인딩하고 DB는 대상 하나만 허용
-- [x] TEST-A011 Admin 로그인도 계정 5회·network 30회 제한, 성공 시 해당 account 상태만 삭제하고 network 누적 유지
+- [x] TEST-A011 Admin 로그인도 같은 표적 lockout 방지·network 30회 상한을 적용하고 성공 요청만 예약 반환
 - [x] TEST-A012 신고 action은 `change_report`와 전용 `block_listing`/`suspend_user` 권한을 내부에서 재검사
 - [x] TEST-A013 forged Admin POST로 숨겨진 상품 차단·계정 정지 action 실행 불가
 - [x] TEST-A014 관리자 본인·staff·superuser 일괄 정지 제외
@@ -99,13 +111,14 @@
 - [x] TEST-A022 신고 처리·차단·정지 action은 Report 행 잠금과 `OPEN` 재검사 뒤 실행
 - [x] TEST-A023 purge된 상품의 stale Listing Admin 저장은 레코드를 다시 생성하지 못함
 - [x] TEST-A024 오래 열린 Listing Admin 수정은 새 `BLOCKED` 상태·사유·처리자·시각을 덮어쓰지 못함
+- [x] TEST-A025 후기 본문·평점·방향 직접 편집은 거부하고 `change_review` 전용 hide/양방향 완료 후기 restore action만 감사 로그와 함께 허용
 
 ## 입력 검증 및 표현
 
 - [x] TEST-I001 SQL 삽입 형태 검색어가 ORM의 일반 문자열로 처리됨
 - [x] TEST-I002 상품·메시지 XSS 페이로드가 템플릿에서 이스케이프됨
 - [x] TEST-I003 0·음수·상한 초과 상품 가격 거부
-- [x] TEST-I004 외부 `next` URL과 `//evil.example` 리다이렉트 거부
+- [x] TEST-I004 Django host·scheme 검증으로 외부 URL·`//evil.example`·역슬래시 변형을 거부하고 정상 same-host 경로만 허용
 - [x] TEST-I005 신고 대상·송금 발신자 추가 POST 필드 무시
 - [x] TEST-I006 사용자 입력을 헤더·파일 경로·서버 URL로 사용하지 않는 데이터 흐름 검토
 - [x] TEST-I007 순차 사용자 ID만으로 신고·차단 불가, 참여 대화에서 상대방을 서버가 파생
@@ -134,6 +147,7 @@
 - [x] TEST-T008 모든 게시 송금은 원장 정확히 2건이고 delta 합계 0
 - [x] TEST-T009 Transfer instance·QuerySet update/delete/bulk_update 거부
 - [x] TEST-T010 LedgerEntry instance·QuerySet update/delete/bulk_update 거부
+- [x] TEST-T011 불변조건·workflow 없는 미완성 `REVERSAL` 종류·관계 제거 migration이 기존 반전 행을 fail-closed로 거부
 
 ## 상품 상태·자원·목록 성능
 
@@ -146,7 +160,8 @@
 - [x] TEST-Q007 판매완료 상품에는 새 대화를 시작할 수 없음
 - [x] TEST-Q008 대화 목록 30개 페이지네이션과 Subquery 마지막 메시지로 N+1 제거
 - [x] TEST-Q009 전체 채팅 초기 50·요청 최대 100·DOM 최대 200, poll 40회/분·send 10회/분, signed cursor와 탭 hidden pause·오류 backoff
-- [x] TEST-Q010 수정 폼 hidden revision과 transaction에서 잠근 최신 `updated_at`이 다르면 409로 거부하고 제목·가격·하자·파일·가격 하락 알림 근거를 덮어쓰지 않음
+- [x] TEST-Q010 수정 폼의 정확히 하나인 필수 hidden revision을 검사하고 누락·공백·중복은 파일 처리 전 400, 잠근 최신 `updated_at` 불일치는 409로 거부해 제목·가격·하자·파일·가격 하락 알림 근거를 덮어쓰지 않음
+- [x] TEST-Q011 동시 거래 완료 요청의 조건부 UNIQUE 경쟁은 savepoint에서 처리해 동일 대화 요청은 기존 행을 재사용하고 다른 거래는 일반 오류로 종료
 
 ## 파일 업로드
 
@@ -163,6 +178,8 @@
 - [x] TEST-U011 제한 소진 시 상품 Form·이미지 sanitizer 실행 전 429
 - [x] TEST-U012 증거 endpoint의 `view_report` 권한, 매 요청 SHA-256 재검증, 변조 404, `no-store`·`nosniff`, actor log와 증거명 index
 - [x] TEST-U013 기존 이미지 삭제 체크가 302·DB 빈 이미지·commit 후 파일 삭제이며 500이 발생하지 않음 - `FileField.save_form_data()` SEC-031 회귀 통과
+- [x] TEST-U014 완료 상품 숨김은 거래·후기 참조 행을 보존하면서 설명·지역·대표/추가 사진·하자 공개 정보를 정리하고 `DELETED`로 비공개 처리
+- [x] TEST-U015 인증 뒤·CSRF 전 상품 multipart admission은 사용자별 10회/시간을 원자 집계하고 익명·초과 요청의 `POST`·`FILES`·body를 파싱하지 않음; reverse proxy body·연결·속도·동시성 제한은 별도 운영 항목
 - [x] TEST-U014 이미지 미변경·교체·삭제+업로드 동시 선택·잘못된 이미지에서 기존/신규 파일 생명주기와 기존 증거 보존 회귀 통과
 - [x] TEST-U015 multipart POST·PUT·PATCH 전체 21MiB를 CSRF·폼 파싱 전에 제한하고 known length는 body read 전, 누락·chunked·축소 length는 여러 파일 실제 chunk 누적으로 거부; 정상 upload·안전 400·보안 헤더 유지
 - [x] TEST-U016 하자 조건부 UI는 비-`PRESENT`에서 입력을 숨김·disabled·초기화하고 `OTHER` 상세를 native required로 표시; 서버는 forged 상태/code 모순을 거부하고 add→clear 수정의 stale 상세·code를 제거하며 오류 요약·링크·포커스와 제출 잠금을 제공
@@ -193,6 +210,7 @@
 - [x] TEST-R012 첨부 영역만 저채도 세이지로 한정하고 업로드 사진은 원색 유지; JPEG·PNG·WebP MIME accept와 5MB·1,200만 픽셀 help, guarded URL 현재 이미지, 내부 저장명·`MEDIA_URL` 비노출, 470px 이하 모바일 CSS를 `ListingSecurityTests` 26개로 검증. 당시 색 조합의 명암비 계산은 과거 팔레트 증적으로 보존
 - [x] TEST-R013 최종 웜톤 UI를 1440×1000 데스크톱과 320×800 모바일에서 확인해 문서 가로 overflow 0, 주요 조작 최소 44px, 상품 사진 원색과 외부 asset 미추가를 확인; 최신 CSS 중괄호 1112/1112. 실제 키보드·스크린리더·200% 확대는 TEST-R008로 계속 대기
 - [x] TEST-R014 상품·메시지·후기 폼이 공통 오류 요약 partial·요약 포커스·native validation·유효 제출 submit lock을 사용하고, 거래 대화는 상품 전체 활성 거래와 현재 대화를 분리해 잘못된 CTA·상대 신원을 공개하지 않음
+- [x] TEST-R015 1440×900·375×812 홈 html/body overflow 0·웜톤 배경·Django 진단문구 없음, 로그인 password+CSRF·overflow 0, 무작위 URL custom 404·traceback/경로 비노출
 
 ## 명시적 N/A
 
@@ -211,6 +229,7 @@
 - [~] REL-T05 공백 없는 지정 파일명과 공식 기한 2026-07-24 확인
 - [~] REL-T06 최초 GitHub Actions CI·CodeQL·Dependabot 실행 결과와 대상 commit SHA 기록
 - [~] REL-T07 운영 reverse proxy가 `MEDIA_ROOT`·`/_private-media/`를 직접 alias로 노출하지 않고 모든 이미지 요청이 Django 권한검사 view를 통과하는지 배포 설정 검증
-- [x] REL-T08 README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
+- [x] REL-T08 README와 `docs/00~13` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건 확인. 현재형 수치·완료 표현을 최종 감사 결과로 동기화하고 과거 기준선은 명시적으로 라벨링
 - [x] REL-T09 SEC-031~041 직접 분기, 확장 기능 표적 36개, 직전 전체 206개, coverage 5,778 statements / 343 miss / 94%, Ruff·Bandit·pip-audit·deploy check 통합 검증 완료
-- [x] REL-T10 SEC-042~047 최신 결합 40개, 전체 tests 219개, coverage 94%, Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff 최종 로컬 게이트 통과
+- [x] REL-T10 SEC-042~047 최신 결합 40개, 전체 tests 219개, coverage 94%, Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff 로컬 게이트 통과 — SEC-048~061 전 기준선
+- [x] REL-T11 SEC-048~061와 완료 상품 숨김 변경 뒤 전체 251 tests·coverage 94%·Ruff·Bandit·pip check·두 lock pip-audit·check/deploy·migration·JS·CSS·diff·secret scan 통과

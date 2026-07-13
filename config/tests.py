@@ -1,10 +1,16 @@
 import importlib.util
+import json
 import os
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
+from django.core.cache import cache
 from django.core.checks import run_checks
 from django.core.exceptions import (
     ImproperlyConfigured,
@@ -15,11 +21,15 @@ from django.core.exceptions import (
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.handlers.asgi import ASGIRequest
 from django.http import Http404, HttpResponse, HttpResponseNotAllowed, JsonResponse
-from django.test import Client, RequestFactory, SimpleTestCase, override_settings
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from django.urls import path
 
-from .middleware import CumulativeUploadLimitHandler, MultipartUploadLimitMiddleware
+from .middleware import (
+    CumulativeUploadLimitHandler,
+    MultipartAdmissionMiddleware,
+    MultipartUploadLimitMiddleware,
+)
 from .settings import env_bool
 from .urls import urlpatterns as application_urlpatterns
 
@@ -248,11 +258,19 @@ class MultipartUploadLimitTests(ErrorResponseAssertions, SimpleTestCase):
         self.client = Client(raise_request_exception=False)
         self.factory = RequestFactory()
 
-    def test_limit_is_before_csrf_and_keeps_existing_upload_policies(self):
+    def test_upload_boundaries_are_ordered_before_csrf_and_keep_existing_policies(self):
         middleware = settings.MIDDLEWARE
 
         self.assertLess(
             middleware.index("config.middleware.MultipartUploadLimitMiddleware"),
+            middleware.index("django.contrib.auth.middleware.AuthenticationMiddleware"),
+        )
+        self.assertLess(
+            middleware.index("django.contrib.auth.middleware.AuthenticationMiddleware"),
+            middleware.index("config.middleware.MultipartAdmissionMiddleware"),
+        )
+        self.assertLess(
+            middleware.index("config.middleware.MultipartAdmissionMiddleware"),
             middleware.index("django.middleware.csrf.CsrfViewMiddleware"),
         )
         self.assertEqual(settings.DATA_UPLOAD_MAX_MEMORY_SIZE, 6 * 1024 * 1024)
@@ -389,7 +407,7 @@ class MultipartUploadLimitTests(ErrorResponseAssertions, SimpleTestCase):
         )
         self.assert_security_headers(response)
 
-    def test_normal_multipart_upload_still_reaches_django_file_parsing(self):
+    def test_full_stack_non_listing_multipart_still_reaches_file_parsing(self):
         response = self.client.post(
             "/__test__/multipart/",
             {
@@ -403,6 +421,232 @@ class MultipartUploadLimitTests(ErrorResponseAssertions, SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"file_count": 2, "file_bytes": 7})
         self.assert_security_headers(response)
+
+    def test_full_stack_anonymous_listing_multipart_is_rejected_safely(self):
+        response = self.client.generic(
+            "POST",
+            "/listings/new/",
+            data=b"--upload-boundary--\r\n",
+            content_type="multipart/form-data; boundary=upload-boundary",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assert_no_diagnostics(response, "upload-boundary")
+        self.assert_security_headers(response)
+
+
+@override_settings(
+    DEBUG=True,
+    ROOT_URLCONF=__name__,
+    SECURE_SSL_REDIRECT=False,
+)
+class MultipartAdmissionTests(ErrorResponseAssertions, SimpleTestCase):
+    def setUp(self):
+        cache.clear()
+        self.factory = RequestFactory()
+        self.user = SimpleNamespace(is_authenticated=True, pk=731)
+
+    def tearDown(self):
+        cache.clear()
+
+    def _multipart_request(self, method="POST", path="/listings/new/"):
+        request = self.factory.generic(
+            method,
+            path,
+            data=b"--upload-boundary--\r\n",
+            content_type="multipart/form-data; boundary=upload-boundary",
+        )
+        return request
+
+    def test_anonymous_multipart_writes_never_reach_or_parse_downstream(self):
+        for method in ("POST", "PUT", "PATCH"):
+            with self.subTest(method=method):
+                request = self._multipart_request(method=method)
+                request.user = AnonymousUser()
+                downstream_calls = []
+
+                def downstream(inner_request, calls=downstream_calls):
+                    calls.append(inner_request)
+                    inner_request.FILES.getlist("files")
+                    return HttpResponse("must not run")
+
+                response = MultipartAdmissionMiddleware(downstream)(request)
+
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(downstream_calls, [])
+                self.assertFalse(request._read_started)
+                self.assertFalse(hasattr(request, "_post"))
+                self.assertFalse(hasattr(request, "_files"))
+                self.assertFalse(hasattr(request, "_body"))
+                self.assert_no_diagnostics(response, "upload-boundary")
+
+    @override_settings(
+        LISTING_MULTIPART_ADMISSION_LIMIT=1,
+        LISTING_MULTIPART_ADMISSION_WINDOW_SECONDS=3600,
+    )
+    def test_listing_create_and_update_excess_is_rejected_before_body_parsing(self):
+        paths = (
+            "/listings/new/",
+            "/listings/11111111-1111-1111-1111-111111111111/edit/",
+        )
+        for request_path in paths:
+            with self.subTest(path=request_path):
+                cache.clear()
+                downstream_calls = []
+
+                def downstream(inner_request, calls=downstream_calls):
+                    calls.append(inner_request)
+                    return HttpResponse(status=204)
+
+                middleware = MultipartAdmissionMiddleware(downstream)
+                admitted_request = self._multipart_request(path=request_path)
+                admitted_request.user = self.user
+                admitted_response = middleware(admitted_request)
+                rejected_request = self._multipart_request(path=request_path)
+                rejected_request.user = self.user
+                rejected_response = middleware(rejected_request)
+
+                self.assertEqual(admitted_response.status_code, 204)
+                self.assertEqual(rejected_response.status_code, 429)
+                self.assertEqual(downstream_calls, [admitted_request])
+                self.assertFalse(rejected_request._read_started)
+                self.assertFalse(hasattr(rejected_request, "_post"))
+                self.assertFalse(hasattr(rejected_request, "_files"))
+                self.assertFalse(hasattr(rejected_request, "_body"))
+                self.assert_no_diagnostics(rejected_response, "upload-boundary")
+
+    @override_settings(
+        LISTING_MULTIPART_ADMISSION_LIMIT=1,
+        LISTING_MULTIPART_ADMISSION_WINDOW_SECONDS=3600,
+    )
+    def test_expired_cache_key_race_retries_with_atomic_add(self):
+        request = self._multipart_request(path="/listings/new/")
+        request.user = self.user
+
+        with patch("config.middleware.cache") as mocked_cache:
+            mocked_cache.add.side_effect = (False, True)
+            mocked_cache.incr.side_effect = ValueError
+            response = MultipartAdmissionMiddleware(lambda _request: HttpResponse(status=204))(
+                request
+            )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(mocked_cache.add.call_count, 2)
+        mocked_cache.incr.assert_called_once()
+
+    @override_settings(
+        LISTING_MULTIPART_ADMISSION_LIMIT=1,
+        LISTING_MULTIPART_ADMISSION_WINDOW_SECONDS=3600,
+    )
+    def test_foreign_browser_context_is_rejected_without_spending_quota(self):
+        for headers in (
+            {"HTTP_ORIGIN": "https://untrusted.example"},
+            {"HTTP_ORIGIN": "http://["},
+            {"HTTP_SEC_FETCH_SITE": "same-site"},
+            {"HTTP_SEC_FETCH_SITE": "cross-site"},
+        ):
+            with self.subTest(headers=headers):
+                cache.clear()
+                rejected = self._multipart_request(path="/listings/new/")
+                rejected.user = self.user
+                for name, value in headers.items():
+                    rejected.META[name] = value
+                downstream_calls = []
+
+                def downstream(inner_request, calls=downstream_calls):
+                    calls.append(inner_request)
+                    return HttpResponse(status=204)
+
+                middleware = MultipartAdmissionMiddleware(downstream)
+                response = middleware(rejected)
+
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(downstream_calls, [])
+                self.assertFalse(rejected._read_started)
+                self.assertFalse(hasattr(rejected, "_post"))
+                self.assertFalse(hasattr(rejected, "_files"))
+                self.assertFalse(hasattr(rejected, "_body"))
+
+                same_origin_request = self._multipart_request(path="/listings/new/")
+                same_origin_request.user = self.user
+                same_origin_request.META["HTTP_ORIGIN"] = "http://testserver"
+                same_origin_request.META["HTTP_SEC_FETCH_SITE"] = "same-origin"
+                admitted = middleware(same_origin_request)
+
+                self.assertEqual(admitted.status_code, 204)
+                self.assertEqual(downstream_calls, [same_origin_request])
+
+    def test_authenticated_non_listing_multipart_still_parses_normally(self):
+        request = self.factory.post(
+            "/__test__/multipart/",
+            {
+                "files": [
+                    SimpleUploadedFile("one.txt", b"abc", content_type="text/plain"),
+                    SimpleUploadedFile("two.txt", b"defg", content_type="text/plain"),
+                ]
+            },
+        )
+        request.user = self.user
+
+        response = MultipartAdmissionMiddleware(multipart_probe_view)(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content), {"file_count": 2, "file_bytes": 7})
+
+    def test_anonymous_urlencoded_form_still_reaches_normal_processing(self):
+        request = self.factory.generic(
+            "POST",
+            "/accounts/login/",
+            data=urlencode({"username": "alice", "password": "normal-form-value"}),
+            content_type="application/x-www-form-urlencoded",
+        )
+        request.user = AnonymousUser()
+
+        def parse_normal_form(inner_request):
+            return JsonResponse({"username": inner_request.POST.get("username")})
+
+        response = MultipartAdmissionMiddleware(parse_normal_form)(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content), {"username": "alice"})
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    LISTING_MULTIPART_ADMISSION_LIMIT=1,
+    LISTING_MULTIPART_ADMISSION_WINDOW_SECONDS=3600,
+)
+class MultipartAdmissionFullStackTests(ErrorResponseAssertions, TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="multipart-full-stack-user",
+            password="Correct-Horse-Battery-99!",  # nosec B106
+        )
+        self.client.force_login(self.user)
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_listing_admission_429_keeps_outer_security_headers(self):
+        data = {
+            "title": "입장 제한 보안 헤더 검증 상품",
+            "description": "첫 요청만 정상 처리되고 다음 multipart는 파싱 전에 거부됩니다.",
+            "price_points": 1000,
+            "category": "OTHER",
+            "condition": "GOOD",
+            "region": "서울",
+            "defect_disclosure": "NONE_KNOWN",
+        }
+
+        admitted = self.client.post("/listings/new/", data)
+        rejected = self.client.post("/listings/new/", data)
+
+        self.assertEqual(admitted.status_code, 302)
+        self.assertEqual(rejected.status_code, 429)
+        self.assert_security_headers(rejected)
+        self.assert_no_diagnostics(rejected, data["title"], data["description"])
 
 
 @override_settings(
@@ -419,12 +663,16 @@ class DebugSafeExceptionTests(ErrorResponseAssertions, SimpleTestCase):
         submitted_password = "Posted-Password-Must-Not-Appear!"
 
         with self.assertLogs("tiny_market.security", level="ERROR") as captured:
-            response = self.client.post(
+            response = self.client.generic(
+                "POST",
                 "/__test__/exception/",
-                {
-                    "password": submitted_password,
-                    "confirmation": submitted_password,
-                },
+                data=urlencode(
+                    {
+                        "password": submitted_password,
+                        "confirmation": submitted_password,
+                    }
+                ),
+                content_type="application/x-www-form-urlencoded",
             )
 
         self.assertEqual(response.status_code, 500)
@@ -523,9 +771,11 @@ class ProductionErrorResponseTests(ErrorResponseAssertions, SimpleTestCase):
         submitted_password = "Csrf-Rejected-Password-Secret!"
 
         with self.assertLogs("tiny_market.security", level="WARNING") as captured:
-            response = csrf_client.post(
+            response = csrf_client.generic(
+                "POST",
                 "/__test__/csrf/",
-                {"password": submitted_password},
+                data=urlencode({"password": submitted_password}),
+                content_type="application/x-www-form-urlencoded",
             )
 
         self.assertEqual(response.status_code, 403)
@@ -537,7 +787,12 @@ class ProductionErrorResponseTests(ErrorResponseAssertions, SimpleTestCase):
 
     def test_normal_400_405_and_429_responses_are_not_rewritten(self):
         bad_response = self.client.get("/__test__/ordinary-400/")
-        method_response = self.client.post("/__test__/method/")
+        method_response = self.client.generic(
+            "POST",
+            "/__test__/method/",
+            data="",
+            content_type="application/x-www-form-urlencoded",
+        )
         throttled_response = self.client.get("/__test__/throttled/")
 
         self.assertEqual(

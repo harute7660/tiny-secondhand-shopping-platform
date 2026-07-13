@@ -30,6 +30,8 @@ from .models import (
     Review,
     SavedSearch,
     Trade,
+    TradeEvidence,
+    TradeImageEvidence,
     Transfer,
     WalletAccount,
 )
@@ -295,13 +297,223 @@ class TradeAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_select_related = ("listing", "conversation")
 
 
+@admin.register(TradeEvidence)
+class TradeEvidenceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """Private dispute snapshot; never editable from the administration UI."""
+
+    list_display = ("trade", "title_snapshot", "price_points_snapshot", "captured_at")
+    search_fields = (
+        "trade__listing__title",
+        "trade__conversation__buyer__username",
+        "trade__conversation__seller__username",
+        "title_snapshot",
+    )
+    raw_id_fields = ("trade",)
+    list_select_related = ("trade", "trade__listing")
+
+
+@admin.register(TradeImageEvidence)
+class TradeImageEvidenceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    # Do not expose storage paths in the changelist. Object access remains
+    # permission-gated and read-only for authorized dispute reviewers.
+    list_display = ("evidence", "position", "sha256", "verified_image_link")
+    search_fields = ("evidence__trade__listing__title", "sha256")
+    raw_id_fields = ("evidence",)
+    list_select_related = ("evidence", "evidence__trade")
+
+    def get_urls(self):
+        return [
+            path(
+                "<int:object_id>/verified-image/",
+                self.admin_site.admin_view(self.verified_image_view),
+                name="market_trade_image_evidence_verified",
+            )
+        ] + super().get_urls()
+
+    @admin.display(description="검증된 증거 이미지")
+    def verified_image_link(self, obj):
+        return format_html(
+            '<a href="{}">무결성 확인 후 보기</a>',
+            reverse("admin:market_trade_image_evidence_verified", args=[obj.pk]),
+        )
+
+    def verified_image_view(self, request, object_id):
+        # Check model-level permission before looking up the object so an
+        # unauthorized staff account cannot use 403/404 differences as an ID
+        # existence oracle.
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        evidence = get_object_or_404(TradeImageEvidence, pk=object_id)
+        if not self.has_view_permission(request, evidence):
+            raise PermissionDenied
+        storage = Listing._meta.get_field("image").storage
+        try:
+            with storage.open(evidence.storage_name, "rb") as source:
+                payload = source.read(MAX_IMAGE_BYTES + 1)
+        except OSError as exc:
+            raise Http404 from exc
+        if len(payload) > MAX_IMAGE_BYTES:
+            raise Http404
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if not hmac.compare_digest(actual_digest, evidence.sha256):
+            security_logger.warning(
+                "trade_evidence_integrity_failed evidence=%s trade=%s",
+                evidence.pk,
+                evidence.evidence.trade_id,
+            )
+            raise Http404
+        response = FileResponse(io.BytesIO(payload), content_type="image/jpeg")
+        response.headers["Content-Disposition"] = 'inline; filename="trade-evidence.jpg"'
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        security_logger.info(
+            "trade_evidence_viewed actor=%s evidence=%s trade=%s",
+            request.user.pk,
+            evidence.pk,
+            evidence.evidence.trade_id,
+        )
+        return response
+
+
 @admin.register(Review)
-class ReviewAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+class ReviewAdmin(admin.ModelAdmin):
     list_display = ("trade", "direction", "rating", "visibility", "created_at")
     list_filter = ("direction", "rating", "visibility", "created_at")
     search_fields = ("body",)
     raw_id_fields = ("trade",)
     list_select_related = ("trade",)
+    actions = ("hide_selected_reviews", "restore_selected_reviews")
+
+    def get_readonly_fields(self, request, obj=None):
+        return tuple(field.name for field in self.model._meta.concrete_fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # Keep the object page view-only while retaining the model-level
+        # permission needed to expose the constrained bulk actions.
+        if obj is not None:
+            return False
+        return request.user.has_perm("market.change_review")
+
+    def save_model(self, request, obj, form, change):
+        # Review text, author direction, rating and trade are immutable.  The
+        # narrowly-scoped actions below are the only supported moderation path.
+        raise PermissionDenied
+
+    def _require_review_moderation_permission(self, request):
+        if not request.user.has_perm("market.change_review"):
+            raise PermissionDenied
+
+    @admin.action(description="선택한 공개 후기를 숨김", permissions=("change",))
+    def hide_selected_reviews(self, request, queryset):
+        self._require_review_moderation_permission(request)
+        hidden = 0
+        with transaction.atomic():
+            reviews = list(
+                Review.objects.select_for_update()
+                .filter(pk__in=queryset.values("pk"), visibility=Review.Visibility.PUBLIC)
+                .order_by("pk")
+            )
+            for review in reviews:
+                updated = Review.objects.filter(
+                    pk=review.pk,
+                    visibility=Review.Visibility.PUBLIC,
+                ).update(visibility=Review.Visibility.HIDDEN)
+                if not updated:
+                    continue
+                hidden += 1
+                review.visibility = Review.Visibility.HIDDEN
+                self.log_change(request, review, "관리자 검토로 공개 후기를 숨김")
+                security_logger.warning(
+                    "review_hidden actor=%s review=%s trade=%s",
+                    request.user.pk,
+                    review.pk,
+                    review.trade_id,
+                )
+        self.message_user(request, f"후기 {hidden}개를 숨겼습니다.", messages.SUCCESS)
+
+    @admin.action(description="선택한 숨김 후기를 다시 공개", permissions=("change",))
+    def restore_selected_reviews(self, request, queryset):
+        self._require_review_moderation_permission(request)
+        restored = 0
+        selected_ids = frozenset(queryset.values_list("pk", flat=True))
+        with transaction.atomic():
+            candidate_trade_ids = tuple(
+                Review.objects.filter(
+                    pk__in=selected_ids,
+                    visibility=Review.Visibility.HIDDEN,
+                    trade__status=Trade.Status.COMPLETED,
+                )
+                .values_list("trade_id", flat=True)
+                .distinct()
+            )
+            # Lock both directions, not just the selected row. This prevents a
+            # counterpart from changing between the blind-pair check and the
+            # visibility update.
+            locked_reviews = list(
+                Review.objects.select_for_update()
+                .select_related("trade")
+                .filter(
+                    trade_id__in=candidate_trade_ids,
+                    trade__status=Trade.Status.COMPLETED,
+                )
+                .order_by("trade_id", "direction", "pk")
+            )
+
+            reviews_by_trade = {}
+            for review in locked_reviews:
+                reviews_by_trade.setdefault(review.trade_id, []).append(review)
+
+            expected_directions = set(Review.Direction.values)
+            reviews_to_restore = []
+            for paired_reviews in reviews_by_trade.values():
+                # Require one row for each direction. A mere count of two is
+                # insufficient for legacy or manually corrupted visibility
+                # states.
+                if (
+                    len(paired_reviews) != 2
+                    or {review.direction for review in paired_reviews} != expected_directions
+                ):
+                    continue
+                selected_hidden = [
+                    review
+                    for review in paired_reviews
+                    if review.pk in selected_ids and review.visibility == Review.Visibility.HIDDEN
+                ]
+                if len(selected_hidden) == 2:
+                    # Both hidden directions were deliberately selected and
+                    # are locked, so they may be restored as one atomic pair.
+                    reviews_to_restore.extend(selected_hidden)
+                    continue
+                if len(selected_hidden) != 1:
+                    continue
+                candidate = selected_hidden[0]
+                counterpart = next(review for review in paired_reviews if review.pk != candidate.pk)
+                if counterpart.visibility == Review.Visibility.PUBLIC:
+                    reviews_to_restore.append(candidate)
+
+            for review in reviews_to_restore:
+                updated = Review.objects.filter(
+                    pk=review.pk,
+                    visibility=Review.Visibility.HIDDEN,
+                ).update(visibility=Review.Visibility.PUBLIC)
+                if not updated:
+                    continue
+                restored += 1
+                review.visibility = Review.Visibility.PUBLIC
+                self.log_change(request, review, "관리자 재검토로 숨김 후기를 다시 공개")
+                security_logger.warning(
+                    "review_restored actor=%s review=%s trade=%s",
+                    request.user.pk,
+                    review.pk,
+                    review.trade_id,
+                )
+        self.message_user(request, f"후기 {restored}개를 다시 공개했습니다.", messages.SUCCESS)
 
 
 class ReportImageEvidenceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
@@ -563,6 +775,11 @@ class ReportAdmin(admin.ModelAdmin):
             )
             for report in reports:
                 listing = report.listing
+                # A seller archive is a privacy boundary.  Moderators may still
+                # resolve the retained report/evidence, but a report action must
+                # never move a redacted DELETED row back toward a public state.
+                if listing.status == Listing.Status.DELETED:
+                    continue
                 listing.status = Listing.Status.BLOCKED
                 listing.blocked_by = request.user
                 listing.blocked_reason = report.details

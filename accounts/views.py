@@ -137,6 +137,17 @@ def _clear_cache_attempts(attempt_keys):
     cache.delete_many([_reservation_cache_key(scope, key_hash) for scope, key_hash in attempt_keys])
 
 
+def _release_cache_attempts(attempt_keys):
+    """Release only this request's pre-authentication reservations."""
+    for scope, key_hash in attempt_keys:
+        try:
+            cache.decr(_reservation_cache_key(scope, key_hash))
+        except ValueError:
+            # Cache eviction between authentication and release is safe: the
+            # durable database counter is released separately below.
+            continue
+
+
 def _reserve_database_attempts(attempt_keys, now):
     """Reserve one password check in a short transaction, before hashing."""
     with transaction.atomic():
@@ -169,6 +180,26 @@ def _reserve_database_attempts(attempt_keys, now):
                 update_fields=("failures", "window_started", "locked_until"),
             )
     return True
+
+
+def _release_database_attempts(attempt_keys):
+    """Release one successful request without erasing other users' failures."""
+    with transaction.atomic():
+        for scope, key_hash in _ordered_attempt_keys(attempt_keys):
+            attempt = (
+                LoginAttempt.objects.select_for_update()
+                .filter(scope=scope, key_hash=key_hash)
+                .first()
+            )
+            if attempt is None or attempt.failures == 0:
+                continue
+            if attempt.failures == 1:
+                attempt.delete()
+                continue
+            attempt.failures -= 1
+            if attempt.locked_until and attempt.failures < _attempt_limit(scope):
+                attempt.locked_until = None
+            attempt.save(update_fields=("failures", "locked_until"))
 
 
 def _clear_database_attempts(attempt_keys):
@@ -206,15 +237,39 @@ def _purge_expired_login_attempts(now):
 
 
 def _reserve_authentication_attempt(attempt_keys, now):
-    # The cache gives an atomic fast gate in the configured process/shared
-    # cache. The DB preserves the lock window across process restarts. Neither
-    # lock is held while an expensive password hash is evaluated.
+    # Only the network reservation is allowed to reject work before password
+    # verification. Account failures are recorded after verification so an
+    # attacker cannot hard-lock another person's valid credentials merely by
+    # naming that account. The network gate still bounds expensive hash work.
+    network_keys = tuple(
+        (scope, key_hash) for scope, key_hash in attempt_keys if scope == LoginAttempt.Scope.NETWORK
+    )
     _purge_expired_login_attempts(now)
-    if _database_attempt_is_locked(attempt_keys, now):
+    if _database_attempt_is_locked(network_keys, now):
         return False
-    if not _reserve_cache_attempts(attempt_keys):
+    if not _reserve_cache_attempts(network_keys):
         return False
-    return _reserve_database_attempts(attempt_keys, now)
+    if _reserve_database_attempts(network_keys, now):
+        return True
+    # The cache reservation must not leak when the durable gate rejects a
+    # race with another process.
+    _release_cache_attempts(network_keys)
+    return False
+
+
+def _record_failed_account_attempt(attempt_keys, now):
+    account_keys = tuple(
+        (scope, key_hash) for scope, key_hash in attempt_keys if scope == LoginAttempt.Scope.ACCOUNT
+    )
+    _reserve_database_attempts(account_keys, now)
+
+
+def _release_successful_network_attempt(attempt_keys):
+    network_keys = tuple(
+        (scope, key_hash) for scope, key_hash in attempt_keys if scope == LoginAttempt.Scope.NETWORK
+    )
+    _release_cache_attempts(network_keys)
+    _release_database_attempts(network_keys)
 
 
 def _clear_successful_account_attempts(attempt_keys):
@@ -362,6 +417,7 @@ def login_view(request):
         is_locked = not _reserve_authentication_attempt(attempt_keys, now)
         if not is_locked and not credentials_oversized and form.is_valid():
             authenticated_user = form.get_user()
+            _release_successful_network_attempt(attempt_keys)
             _clear_successful_account_attempts(attempt_keys)
 
         if is_locked:
@@ -376,6 +432,7 @@ def login_view(request):
             security_logger.info("login_succeeded actor=%s", request.user.pk)
             return redirect(next_url or "market:home")
         else:
+            _record_failed_account_attempt(attempt_keys, now)
             security_logger.warning(
                 "login_failed account_key=%s network_key=%s",
                 attempt_keys[0][1][:12],
@@ -425,6 +482,7 @@ def admin_login_view(request):
             and request.user.username == submitted_username
         )
         if authenticated:
+            _release_successful_network_attempt(attempt_keys)
             _clear_successful_account_attempts(attempt_keys)
     elif not is_locked:
         authenticated = False
@@ -445,6 +503,7 @@ def admin_login_view(request):
     if authenticated:
         security_logger.info("admin_login_succeeded actor=%s", request.user.pk)
     else:
+        _record_failed_account_attempt(attempt_keys, now)
         security_logger.warning(
             "admin_login_failed account_key=%s network_key=%s",
             attempt_keys[0][1][:12],

@@ -1,5 +1,6 @@
 import hashlib
 import uuid
+from datetime import timedelta
 from io import BytesIO
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -43,6 +44,7 @@ from .models import (
     WalletAccount,
 )
 from .services import (
+    AUTOMATIC_REPORTER_MIN_AGE,
     IdempotencyConflictError,
     InsufficientFundsError,
     issue_demo_points,
@@ -66,6 +68,7 @@ def listing_update_data(listing, **overrides):
         "category": listing.category,
         "condition": listing.condition,
         "region": listing.region,
+        "revision": listing.updated_at.isoformat(timespec="microseconds"),
     }
     data.update(overrides)
     return data
@@ -554,6 +557,7 @@ class ListingSecurityTests(MarketTestCase):
                     "category": self.listing.category,
                     "condition": self.listing.condition,
                     "region": self.listing.region,
+                    "revision": self.listing.updated_at.isoformat(timespec="microseconds"),
                 },
             )
 
@@ -1125,6 +1129,10 @@ class ConversationSecurityTests(MarketTestCase):
 class ModerationSecurityTests(MarketTestCase):
     def setUp(self):
         super().setUp()
+        eligible_joined_at = timezone.now() - AUTOMATIC_REPORTER_MIN_AGE - timedelta(seconds=1)
+        get_user_model().objects.filter(pk__in=(self.bob.pk, self.eve.pk)).update(
+            date_joined=eligible_joined_at
+        )
         self.report_admin = ReportAdmin(Report, admin.site)
         self.request_factory = RequestFactory()
 
@@ -1152,7 +1160,12 @@ class ModerationSecurityTests(MarketTestCase):
 
     @staticmethod
     def _reporter(username):
-        return get_user_model().objects.create_user(username=username, password=PASSWORD)
+        reporter = get_user_model().objects.create_user(username=username, password=PASSWORD)
+        get_user_model().objects.filter(pk=reporter.pk).update(
+            date_joined=timezone.now() - AUTOMATIC_REPORTER_MIN_AGE - timedelta(seconds=1)
+        )
+        reporter.refresh_from_db()
+        return reporter
 
     def _report_listing_as(self, reporter, *, follow=False):
         self.client.force_login(reporter)
@@ -1237,6 +1250,25 @@ class ModerationSecurityTests(MarketTestCase):
             404,
         )
 
+    def test_three_new_accounts_are_recorded_without_automatic_listing_block(self):
+        reporters = [
+            get_user_model().objects.create_user(
+                username=f"fresh-listing-reporter-{index}",
+                password=PASSWORD,
+            )
+            for index in range(3)
+        ]
+
+        for reporter in reporters:
+            self._report_listing_as(reporter)
+
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.assertEqual(
+            Report.objects.filter(listing=self.listing, status=Report.Status.OPEN).count(),
+            3,
+        )
+
     def test_three_distinct_user_reports_auto_suspend_and_keep_safe_redirect(self):
         mallory = self._reporter("user-threshold-third")
         # A self-authored row cannot be created by the web route and must not
@@ -1280,6 +1312,26 @@ class ModerationSecurityTests(MarketTestCase):
             .values("reporter_id")
             .distinct()
             .count(),
+            3,
+        )
+
+    def test_three_new_accounts_are_recorded_without_automatic_user_suspension(self):
+        reporters = [
+            get_user_model().objects.create_user(
+                username=f"fresh-user-reporter-{index}",
+                password=PASSWORD,
+            )
+            for index in range(3)
+        ]
+
+        for reporter in reporters:
+            self._report_user_as(reporter, self.alice, self.listing)
+
+        self.alice.refresh_from_db()
+        self.assertTrue(self.alice.is_active)
+        self.assertFalse(self.alice.is_suspended)
+        self.assertEqual(
+            Report.objects.filter(target_user=self.alice, status=Report.Status.OPEN).count(),
             3,
         )
 
@@ -1517,6 +1569,7 @@ class ModerationSecurityTests(MarketTestCase):
                         "category": Listing.Category.OTHER,
                         "condition": Listing.Condition.FAIR,
                         "region": "변경 지역",
+                        "revision": self.listing.updated_at.isoformat(timespec="microseconds"),
                         "image": make_image("replacement.png"),
                     },
                 )
@@ -1843,11 +1896,34 @@ class ModerationSecurityTests(MarketTestCase):
             buyer=self.bob,
             seller=self.alice,
         )
+        malicious_destinations = (
+            "//evil.example/phish",
+            "/\\evil.example/phish",
+            "https://evil.example/phish",
+            "\\\\evil.example\\phish",
+        )
+        for destination in malicious_destinations:
+            with self.subTest(destination=destination):
+                response = self.client.post(
+                    reverse("market:user_block_toggle", args=[self.alice.pk]),
+                    {"next": destination},
+                )
+                self.assertRedirects(response, reverse("market:conversation_list"))
+
+    def test_user_block_next_parameter_accepts_valid_local_redirect(self):
+        self.client.force_login(self.bob)
+        Conversation.objects.create(
+            listing=self.listing,
+            buyer=self.bob,
+            seller=self.alice,
+        )
+
         response = self.client.post(
             reverse("market:user_block_toggle", args=[self.alice.pk]),
-            {"next": "//evil.example/phish"},
+            {"next": reverse("market:home")},
         )
-        self.assertRedirects(response, reverse("market:conversation_list"))
+
+        self.assertRedirects(response, reverse("market:home"))
 
     def test_unrelated_user_cannot_be_enumerated_through_block_action(self):
         self.client.force_login(self.bob)
@@ -2152,6 +2228,17 @@ class WalletLedgerSecurityTests(MarketTestCase):
             entries = transfer.entries.all()
             self.assertEqual(entries.count(), 2)
             self.assertEqual(sum(entries.values_list("delta", flat=True)), 0)
+
+    def test_unsupported_transfer_kind_is_rejected_by_database(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Transfer.objects.create(
+                sender_account=self.alice.wallet,
+                receiver_account=self.bob.wallet,
+                amount=1_000,
+                kind="REVERSAL",
+                idempotency_key=uuid.uuid4(),
+                initiated_by=self.alice,
+            )
 
     def test_transfer_instance_cannot_be_updated_or_deleted(self):
         posted = transfer_points(self.alice, self.bob, 10_000, uuid.uuid4())

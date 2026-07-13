@@ -6,7 +6,12 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxLengthValidator, MaxValueValidator, MinValueValidator
+from django.core.validators import (
+    MaxLengthValidator,
+    MaxValueValidator,
+    MinValueValidator,
+    RegexValidator,
+)
 from django.db import models
 from django.db.models import F, Q
 
@@ -88,6 +93,64 @@ class ImmutableLedgerModel(models.Model):
 
     def delete(self, using=None, keep_parents=False):
         raise ImmutableLedgerError("게시된 거래 및 원장 기록은 삭제할 수 없습니다.")
+
+
+class ImmutableEvidenceError(ValidationError):
+    """Raised when application code attempts to rewrite retained evidence."""
+
+
+class ImmutableEvidenceQuerySet(models.QuerySet):
+    mutation_error = "보존된 거래 증거는 수정하거나 삭제할 수 없습니다."
+
+    def update(self, **kwargs):
+        raise ImmutableEvidenceError(self.mutation_error)
+
+    def delete(self):
+        raise ImmutableEvidenceError(self.mutation_error)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ImmutableEvidenceError(self.mutation_error)
+
+    def bulk_create(
+        self,
+        objs,
+        batch_size=None,
+        ignore_conflicts=False,
+        update_conflicts=False,
+        update_fields=None,
+        unique_fields=None,
+    ):
+        if update_conflicts or update_fields:
+            raise ImmutableEvidenceError(self.mutation_error)
+        return super().bulk_create(
+            objs,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            update_conflicts=update_conflicts,
+            update_fields=update_fields,
+            unique_fields=unique_fields,
+        )
+
+
+class ImmutableEvidenceManager(models.Manager.from_queryset(ImmutableEvidenceQuerySet)):
+    pass
+
+
+class ImmutableEvidenceModel(models.Model):
+    """Insert-only ORM base for private dispute evidence."""
+
+    objects = ImmutableEvidenceManager()
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ImmutableEvidenceError("보존된 거래 증거는 수정할 수 없습니다.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        raise ImmutableEvidenceError("보존된 거래 증거는 삭제할 수 없습니다.")
 
 
 def listing_image_upload_to(instance, filename):
@@ -550,6 +613,69 @@ class Trade(models.Model):
                 raise ValidationError("거래 대화의 판매자가 상품 판매자와 일치해야 합니다.")
 
 
+class TradeEvidence(ImmutableEvidenceModel):
+    """Private, immutable listing snapshot captured for a trade dispute."""
+
+    trade = models.OneToOneField(
+        Trade,
+        on_delete=models.PROTECT,
+        related_name="evidence",
+    )
+    title_snapshot = models.CharField(max_length=150)
+    description_snapshot = models.TextField()
+    price_points_snapshot = models.PositiveBigIntegerField()
+    category_snapshot = models.CharField(max_length=20)
+    condition_snapshot = models.CharField(max_length=20)
+    region_snapshot = models.CharField(max_length=100)
+    listing_status_snapshot = models.CharField(max_length=10)
+    defect_disclosure_snapshot = models.CharField(max_length=12)
+    defect_details_snapshot = models.TextField(blank=True)
+    defect_codes_snapshot = models.JSONField(default=list, blank=True)
+    source_updated_at = models.DateTimeField()
+    captured_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-captured_at",)
+
+    def __str__(self):
+        return f"trade {self.trade_id} evidence"
+
+
+class TradeImageEvidence(ImmutableEvidenceModel):
+    """Storage reference and digest for one image in a trade snapshot."""
+
+    evidence = models.ForeignKey(
+        TradeEvidence,
+        on_delete=models.PROTECT,
+        related_name="images",
+    )
+    storage_name = models.CharField(max_length=500)
+    sha256 = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"\A[0-9a-f]{64}\Z")],
+    )
+    position = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ("position",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("evidence", "position"),
+                name="mkt_trade_evid_image_pos_uq",
+            ),
+            models.CheckConstraint(
+                condition=Q(position__gte=0, position__lte=MAX_EXTRA_LISTING_IMAGES),
+                name="mkt_trade_evid_image_pos_rng",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("storage_name",), name="mkt_trade_evid_name_idx"),
+        ]
+
+    def __str__(self):
+        return f"trade {self.evidence.trade_id} image {self.position}"
+
+
 class Review(models.Model):
     class Direction(models.TextChoices):
         BUYER_TO_SELLER = "BUYER_TO_SELLER", "구매자가 판매자에게"
@@ -809,7 +935,6 @@ class Transfer(ImmutableLedgerModel):
     class Kind(models.TextChoices):
         ISSUE = "ISSUE", "데모 포인트 발행"
         USER_TRANSFER = "USER_TRANSFER", "사용자 송금"
-        REVERSAL = "REVERSAL", "반전 거래"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     sender_account = models.ForeignKey(
@@ -834,13 +959,6 @@ class Transfer(ImmutableLedgerModel):
         null=True,
         blank=True,
     )
-    reversal_of = models.OneToOneField(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="reversal",
-        null=True,
-        blank=True,
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -862,6 +980,10 @@ class Transfer(ImmutableLedgerModel):
             models.CheckConstraint(
                 condition=Q(amount__gte=1, amount__lte=MAX_TRANSFER_POINTS),
                 name="mkt_transfer_amount_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(kind__in=("ISSUE", "USER_TRANSFER")),
+                name="mkt_transfer_kind_valid",
             ),
         ]
         indexes = [

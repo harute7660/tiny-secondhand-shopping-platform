@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from urllib.parse import urlsplit
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, RequestDataTooBig, SuspiciousOperation
 from django.core.files.uploadhandler import FileUploadHandler
 from django.http import Http404, HttpRequest, HttpResponse
+from django.urls import Resolver404, resolve
 
 from .views import (
     bad_request,
@@ -16,6 +19,19 @@ from .views import (
 )
 
 _UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE = "_multipart_upload_limit_exceeded"
+
+
+def _consume_atomic_limit(key: str, *, limit: int, timeout: int) -> bool:
+    """Consume one fixed-window allowance using cache-native atomic operations."""
+
+    if cache.add(key, 1, timeout=timeout):
+        return True
+    try:
+        return cache.incr(key) <= limit
+    except ValueError:
+        # The key can expire between add() and incr(). Retry creation without
+        # falling back to a non-atomic get/set pair.
+        return cache.add(key, 1, timeout=timeout)
 
 
 class CumulativeUploadLimitHandler(FileUploadHandler):
@@ -104,6 +120,94 @@ class MultipartUploadLimitMiddleware:
     def _limit_response(request: HttpRequest) -> HttpResponse:
         setattr(request, _UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE, True)
         return bad_request(request, RequestDataTooBig())
+
+
+class MultipartAdmissionMiddleware:
+    """Reject unsafe listing-upload multipart writes before parsing.
+
+    This is an application-layer admission boundary. It deliberately does not
+    read ``request.POST``, ``request.FILES``, or ``request.body``. A reverse
+    proxy/server must still enforce connection, request-body, and network rate
+    limits before bytes reach Django.
+    """
+
+    limited_methods = MultipartUploadLimitMiddleware.limited_methods
+    listing_view_names = frozenset(
+        {
+            "market:listing_create",
+            "market:listing_update",
+        }
+    )
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if not MultipartUploadLimitMiddleware._is_limited_multipart_request(request):
+            return self.get_response(request)
+        if not self._is_listing_endpoint(request):
+            return self.get_response(request)
+
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated or user.pk is None:
+            security_logger.warning("anonymous_multipart_rejected")
+            return permission_denied(request, PermissionDenied())
+
+        # The quota is intentionally consumed before Django's CSRF middleware
+        # can parse a multipart body.  Reject an explicitly foreign browser
+        # context first so an untrusted same-site origin cannot spend another
+        # user's upload allowance with CSRF-invalid requests.  Missing browser
+        # metadata is left to Django's authoritative CSRF validation.
+        if self._has_foreign_browser_context(request):
+            security_logger.warning("foreign_listing_multipart_rejected actor=%s", user.pk)
+            return permission_denied(request, PermissionDenied())
+
+        if request.method == "POST":
+            key = f"tiny-market:multipart-admission:v1:user:{user.pk}"
+            if not _consume_atomic_limit(
+                key,
+                limit=settings.LISTING_MULTIPART_ADMISSION_LIMIT,
+                timeout=settings.LISTING_MULTIPART_ADMISSION_WINDOW_SECONDS,
+            ):
+                security_logger.warning("listing_multipart_admission_limited actor=%s", user.pk)
+                return HttpResponse(
+                    "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+                    status=429,
+                    content_type="text/plain; charset=utf-8",
+                )
+
+        return self.get_response(request)
+
+    @classmethod
+    def _is_listing_endpoint(cls, request: HttpRequest) -> bool:
+        try:
+            match = resolve(request.path_info)
+        except Resolver404:
+            return False
+        return match.view_name in cls.listing_view_names
+
+    @staticmethod
+    def _has_foreign_browser_context(request: HttpRequest) -> bool:
+        fetch_site = request.META.get("HTTP_SEC_FETCH_SITE", "").strip().lower()
+        if fetch_site in {"cross-site", "same-site"}:
+            return True
+
+        origin = request.META.get("HTTP_ORIGIN", "").strip()
+        if not origin:
+            return False
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            return True
+        return bool(
+            parsed.scheme.lower() != request.scheme.lower()
+            or parsed.netloc.lower() != request.get_host().lower()
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        )
 
 
 class TrustedProxyHeadersMiddleware:

@@ -91,8 +91,13 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "config.middleware.SecurityHeadersMiddleware",
     "config.middleware.MultipartUploadLimitMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Authentication derives identity from the existing session without
+    # parsing the request body. Multipart admission can therefore reject
+    # unsafe listing-upload bodies before CSRF parses a form token, while
+    # accepted writes still receive normal CSRF validation.
+    "config.middleware.MultipartAdmissionMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "config.middleware.SafeExceptionMiddleware",
 ]
@@ -196,6 +201,11 @@ DATA_UPLOAD_MAX_NUMBER_FILES = 5
 # batch. One extra MiB leaves room for multipart boundaries and normal fields
 # while providing an early, request-wide denial-of-service guard.
 MULTIPART_UPLOAD_MAX_BYTES = 21 * 1024 * 1024
+# A separate pre-parser allowance avoids weakening the existing view-level
+# listing/image quotas. This application limit is not a substitute for a
+# reverse proxy's request-body, connection, and source-network controls.
+LISTING_MULTIPART_ADMISSION_LIMIT = 10
+LISTING_MULTIPART_ADMISSION_WINDOW_SECONDS = 60 * 60
 
 CACHES = {
     "default": {

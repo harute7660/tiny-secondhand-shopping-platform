@@ -1,4 +1,4 @@
-# 프로젝트 개발 일지
+﻿# 프로젝트 개발 일지
 
 이 문서는 최종 보고서의 개발 전 과정과 판단 근거를 재구성하기 위한 원본 기록이다. 의미 있는 변경마다 아래 항목을 같은 날 기록한다.
 
@@ -334,12 +334,22 @@
 - 발견한 보안·무결성 문제(SEC-047): 같은 상품 수정 화면을 두 탭에서 열면 늦게 저장한 오래된 폼이 먼저 저장된 제목·가격·하자와 가격 하락 알림 event의 근거를 덮어쓸 수 있었다. 거래 CTA가 상품 전체의 활성 거래와 현재 대화의 거래를 구분하지 않으면 무관한 구매자가 완료 흐름을 시도하거나 상대 신원을 추론할 수 있었다.
 - 업로드 결정: 허용 field·개수·합계 preflight에서 오류가 나면 거부 파일 객체를 `ListingForm`에 bind·디코딩하지 않고 길이 제한을 통과한 텍스트 POST만 같은 폼에 유지한다. “사진을 다시 골라야 한다”는 안내를 한 번만 표시하며, 브라우저는 기존·삭제·신규를 합친 5장, 장당 5MiB, 신규 합계 20MiB를 제출 전에 검사한다. 전역 `DATA_UPLOAD_MAX_NUMBER_FILES=5`를 넘긴 6파일 위조는 Django parser가 진단정보 없는 일반 400으로 종료한다. 클라이언트 검사는 편의 기능이며 서버 preflight·sanitizer·21MiB middleware를 보안 경계로 유지한다.
 - 사진 편집 결정: 추가 사진 썸네일·연속 번호·삭제 checkbox를 동일 label 안에 직접 결합해 선택 대상을 명확히 했다. 대표 사진을 지우면 남은 첫 추가 사진이 대표로 승격된다는 결과를 도움말에 적었고, 서버의 부모 결합 UUID 검증과 transaction 안의 잠근 자식 재검사는 유지했다.
-- stale 수정 결정: GET 수정 폼에 `updated_at` microseconds 값의 hidden `revision`을 넣고 POST transaction에서 잠근 최신 행의 revision과 비교한다. 다르면 409·일반 오류 요약·새 사진 재선택 안내를 반환하고 어느 필드도 저장하지 않아 가격·하자·알림 덮어쓰기를 막는다. 기존 호환 때문에 revision 누락 요청은 강제 거부하지 않아 인증된 소유자가 직접 생략하는 요청은 잔여 위험이며, 공개 API로 확장할 때 `If-Match` 또는 필수 revision으로 전환한다.
+- stale 수정 결정(당시): GET 수정 폼에 `updated_at` microseconds 값의 hidden `revision`을 넣고 POST transaction에서 잠근 최신 행의 revision과 비교한다. 다르면 409·일반 오류 요약·새 사진 재선택 안내를 반환하고 어느 필드도 저장하지 않아 가격·하자·알림 덮어쓰기를 막는다. 이 시점에는 호환을 위해 누락 요청을 허용했으나, 아래 최종 감사의 SEC-050에서 정확히 1개의 비공백 revision을 필수화해 누락·공백·중복을 400으로 거부하도록 대체했다.
 - 거래 대화 결정: 상품 전체의 진행·완료 거래와 현재 대화의 거래를 분리한다. 다른 대화에서 진행 중이면 현재 대화의 완료 요청·확인·후기 CTA를 숨기고 “다른 거래가 진행 중”이라는 일반 문구만 보여 상대 구매자 신원을 공개하지 않는다. 현재 대화의 최근 거절·취소 기록은 상태와 일시를 표시해 다음 행동을 이해하게 한다.
 - 공통 폼 피드백: 상품·메시지·후기 폼이 같은 오류 요약 partial과 포커스 이동, native validation, 유효 제출 중 버튼 잠금·상태 문구를 사용한다. 이는 중복 요청과 실패를 새로고침으로 오인하는 문제를 줄이지만 서버 CSRF·Form·rate limit을 대체하지 않는다.
 - 테스트/증적: `MultiImageDefectSecurityTests`, `MultipartUploadLimitTests`, `ListingAdminSecurityTests`, `TradeReviewSecurityTests` 최신 결합 **40개 / 17.697초 / system check 0건**, Ruff PASS. 5장·5MiB·20MiB client 경계, preflight 텍스트 보존·파일 재선택, 6파일 parser 400, 썸네일-삭제 결합·대표 승격, stale revision 409·무변경, 다른 거래 CTA·신원 비공개, 현재 대화 거절·취소 기록, 공통 오류·제출 잠금 분기를 포함한다.
 - 결과: 최신 직접 분기 표적 뒤 전체 Django tests **219 / 219 통과 / 157.165초 / system check 0건**, Coverage **219 / 219 / 162.533초 / 6,037 statements / 354 miss / 94%**였다. Ruff lint PASS·46 files formatted, Bandit 0, pip-audit 알려진 취약점 0, Django check·deploy warning 0, migration no changes, Node JavaScript syntax·`git diff --check` PASS로 로컬 최종 품질 게이트를 닫았다.
-- 잔여 위험/다음 작업: revision 누락 호환 경계, SQLite의 실질 행 잠금 부재, 브라우저가 파일 내용을 읽기 전에 표시하는 크기 정보의 비신뢰성은 남는다. 운영 전 PostgreSQL 경합 시험, API revision 의무화, reverse proxy body/time/connection 제한과 실제 키보드·스크린리더·200% 확대·다중 탭 브라우저 인수를 수행한다.
+- 당시 잔여 위험/다음 작업: revision 누락 호환 경계, SQLite의 실질 행 잠금 부재, 브라우저가 파일 내용을 읽기 전에 표시하는 크기 정보의 비신뢰성을 기록했다. revision 누락은 아래 SEC-050에서 제거했으며, 운영 전 PostgreSQL 경합 시험, reverse proxy body/time/connection 제한과 실제 키보드·스크린리더·200% 확대·다중 탭 브라우저 인수는 계속 필요하다.
+
+## 2026-07-13 - 최종 구조·보안 감사와 필수 게이트
+
+- 단계: 전체 코드 감사 / 위협 재평가 / 최소 수정 / 회귀 / 제출 체크리스트 동기화
+- 이유: 기존 219개 통과만으로 새 변경과 운영 위험까지 안전하다고 추정하지 않고, 인증·신고·상품·후기·원장·multipart의 신뢰경계를 마지막으로 역추적하기 위해 수행했다.
+- 변경: 계정 이름 반복 hard lock을 제거하고 network 상한을 유지했다. 자동 moderation은 가입 7일 경과·활성·미정지 신고자만 집계하되 신규 신고 증거를 보존한다. 상품 revision을 필수 단일 token으로 만들고 중복 하자·외부 redirect 변형을 거부했다. 후기 hide/제한 restore action, 미완성 `REVERSAL` 제거, 완료 상품 참조 보존형 개인정보 정리, 거래 요청 INSERT 경쟁 복구, 인증 뒤·CSRF 전 multipart 10회/시간 admission을 추가했다.
+- 구조 판단: `market/views.py` 1,539줄, `services.py` 808줄, `admin.py` 833줄, `site.css` 7,314줄, `market/tests.py` 2,397줄, `accounts/tests.py` 1,301줄의 대형 모듈은 유지보수 부채다. 제출 직전 대규모 분할은 회귀 위험 때문에 보류하고 다음 단계에서 listing/trade/moderation/notification과 CSS component를 분리한다.
+- 최종 증적: Django **251/251/147.753초**, Coverage **6,922 statements/385 miss/94%**, Ruff 50 files, Bandit 8,082 lines/0, pip check·두 lock pip-audit, check/deploy·migration 0007·0008·JS 3 files·CSS 1112/1112·diff·secret scan PASS.
+- 브라우저 증적: 1440×900·375×812 홈에서 가로 overflow 0, 웜톤 배경 정상, Django 진단 문구 없음. 로그인은 password·CSRF가 있고 overflow 없음. 무작위 URL은 custom 404이며 traceback·내부 경로를 노출하지 않았다.
+- 남은 작업: 최종 SHA, Public GitHub·원격 CI, clean clone, 320px·200%·키보드·screenreader와 확장 기능 전체 UAT, PDF·지정 파일명·LMS. PostgreSQL·Redis·reverse proxy·MFA·보존정책·queue 없이는 생산 배포하지 않는다.
 
 ## 후속 기록 템플릿
 

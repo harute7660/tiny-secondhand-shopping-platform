@@ -155,6 +155,10 @@ class ListingForm(forms.ModelForm):
         )
         extra_images = []
         if has_persisted_instance:
+            # Updates use an optimistic-lock token.  Requiring it at the form
+            # boundary prevents non-browser callers from silently opting out
+            # of the lost-update protection.
+            self.fields["revision"].required = True
             extra_images = list(self.instance.extra_images.order_by("position"))
             if not self.is_bound:
                 self.fields["revision"].initial = self.instance.updated_at.isoformat(
@@ -200,6 +204,16 @@ class ListingForm(forms.ModelForm):
         if isinstance(image, UploadedFile):
             return process_listing_image(image)
         return image
+
+    def clean_defects(self):
+        defects = self.cleaned_data.get("defects") or []
+        # A forged multipart request can repeat the same checkbox value even
+        # though the browser UI cannot.  Reject it before bulk_create reaches
+        # the (listing, code) uniqueness constraint and turns bad input into a
+        # server error.
+        if len(defects) != len(set(defects)):
+            raise forms.ValidationError("동일한 하자 항목을 중복 선택할 수 없습니다.")
+        return defects
 
     def clean(self):
         cleaned = super().clean()

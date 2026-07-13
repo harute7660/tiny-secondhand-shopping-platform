@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}상품 삭제 확인 · TINY MARKET{% endblock %}
+{% block title %}상품 숨기기 확인 · TINY MARKET{% endblock %}
 {% block body_class %}decision-page{% endblock %}
 
 {% block content %}
 <section class="shell decision-shell">
   <div class="decision-card">
     <span class="decision-icon decision-icon-danger" aria-hidden="true">!</span>
-    <span class="eyebrow">DELETE LISTING</span>
-    <h1>이 상품을 삭제할까요?</h1>
-    <p>삭제한 상품과 관련 정보는 되돌릴 수 없습니다. 진행 중인 거래가 있다면 먼저 거래 상태를 확인해 주세요.</p>
+    <span class="eyebrow">ARCHIVE LISTING</span>
+    <h1>{% if listing.status == 'SOLD' %}완료 상품을 목록에서 숨길까요?{% else %}이 상품을 목록에서 숨길까요?{% endif %}</h1>
+    <p>상품 설명·거래 지역·사진·하자 정보는 지워지고 공개 목록에서 사라집니다. 이 작업은 되돌릴 수 없지만, 분쟁 대응과 쌍방 후기를 위해 대화·거래·후기 기록은 보존됩니다.</p>
 
     {% if listing %}
       <div class="decision-object">
@@ -23,7 +23,7 @@
     <form method="post" class="decision-actions">
       {% csrf_token %}
       <a class="button button-quiet" href="{% url 'market:listing_detail' listing.pk %}">돌아가기</a>
-      <button class="button button-danger" type="submit">삭제하기</button>
+      <button class="button button-danger" type="submit">목록에서 숨기기</button>
     </form>
   </div>
 </section>

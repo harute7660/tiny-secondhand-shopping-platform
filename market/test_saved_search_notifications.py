@@ -60,6 +60,7 @@ class SavedSearchNotificationSecurityTests(TestCase):
             "region": listing.region,
             "defect_disclosure": listing.defect_disclosure,
             "defect_details": listing.defect_details,
+            "revision": listing.updated_at.isoformat(timespec="microseconds"),
         }
 
     def test_state_changing_routes_require_login_post_and_csrf(self):

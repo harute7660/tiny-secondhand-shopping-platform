@@ -60,5 +60,7 @@ jobs:
           coverage run manage.py test
           coverage report --fail-under=85
 
-      - name: Audit runtime dependencies
-        run: pip-audit -r requirements.lock --disable-pip
+      - name: Audit runtime and development dependencies
+        run: |
+          pip-audit -r requirements.lock --disable-pip
+          pip-audit -r requirements-dev.lock --disable-pip

@@ -209,6 +209,7 @@ class MultiImageDefectSecurityTests(TestCase):
                     condition=listing.condition,
                     region=listing.region,
                     defect_disclosure=listing.defect_disclosure,
+                    revision=listing.updated_at.isoformat(timespec="microseconds"),
                     remove_extra_images=[str(foreign_extra.pk)],
                 ),
             )
@@ -241,6 +242,7 @@ class MultiImageDefectSecurityTests(TestCase):
                         condition=listing.condition,
                         region=listing.region,
                         defect_disclosure=listing.defect_disclosure,
+                        revision=listing.updated_at.isoformat(timespec="microseconds"),
                         **{"image-clear": "on"},
                     ),
                 )
@@ -318,6 +320,7 @@ class MultiImageDefectSecurityTests(TestCase):
                 defect_disclosure=Listing.DefectDisclosure.PRESENT,
                 defects=[ListingDefect.Code.SCRATCH_DENT],
                 defect_details="오른쪽 모서리에 작은 긁힘이 있습니다.",
+                revision=listing.updated_at.isoformat(timespec="microseconds"),
             ),
         )
 
@@ -336,6 +339,7 @@ class MultiImageDefectSecurityTests(TestCase):
                 title=listing.title,
                 defect_disclosure=Listing.DefectDisclosure.NONE_KNOWN,
                 defect_details="브라우저에 남아 있던 숨김 입력",
+                revision=listing.updated_at.isoformat(timespec="microseconds"),
             ),
         )
 
@@ -368,6 +372,66 @@ class MultiImageDefectSecurityTests(TestCase):
         self.assertContains(response, "다른 화면에서 이 상품이 먼저 수정", status_code=409)
         listing.refresh_from_db()
         self.assertEqual(listing.title, "다른 탭이 먼저 저장한 제목")
+
+    def test_missing_blank_or_duplicated_revision_is_rejected_before_form_processing(self):
+        listing = self.create_listing(title="수정 토큰 보호 원본")
+        self.client.force_login(self.alice)
+        update_url = reverse("market:listing_update", args=[listing.pk])
+        valid_revision = listing.updated_at.isoformat(timespec="microseconds")
+        cases = (
+            ("missing", {}),
+            ("blank", {"revision": "   "}),
+            ("duplicated", {"revision": [valid_revision, valid_revision]}),
+        )
+
+        for label, revision_data in cases:
+            with self.subTest(label=label), patch("market.views.ListingForm") as listing_form:
+                response = self.client.post(
+                    update_url,
+                    self.listing_data(title=f"위조 수정 {label}", **revision_data),
+                )
+
+            self.assertEqual(response.status_code, 400)
+            listing_form.assert_not_called()
+            listing.refresh_from_db()
+            self.assertEqual(listing.title, "수정 토큰 보호 원본")
+
+    def test_duplicated_defect_code_is_form_error_and_preserves_existing_data(self):
+        listing = self.create_listing(
+            title="기존 하자 정보",
+            defect_disclosure=Listing.DefectDisclosure.PRESENT,
+            defect_details="기존의 수리 이력입니다.",
+        )
+        ListingDefect.objects.create(
+            listing=listing,
+            code=ListingDefect.Code.REPAIR_HISTORY,
+        )
+        self.client.force_login(self.alice)
+
+        response = self.client.post(
+            reverse("market:listing_update", args=[listing.pk]),
+            self.listing_data(
+                title="중복 값으로 덮어쓸 제목",
+                defect_disclosure=Listing.DefectDisclosure.PRESENT,
+                defects=[
+                    ListingDefect.Code.SCRATCH_DENT,
+                    ListingDefect.Code.SCRATCH_DENT,
+                ],
+                defect_details="위조 요청의 상세 설명",
+                revision=listing.updated_at.isoformat(timespec="microseconds"),
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("defects", response.context["form"].errors)
+        self.assertContains(response, "동일한 하자 항목을 중복 선택할 수 없습니다.")
+        listing.refresh_from_db()
+        self.assertEqual(listing.title, "기존 하자 정보")
+        self.assertEqual(listing.defect_details, "기존의 수리 이력입니다.")
+        self.assertSetEqual(
+            set(listing.defects.values_list("code", flat=True)),
+            {ListingDefect.Code.REPAIR_HISTORY},
+        )
 
     def test_defect_details_are_escaped_on_detail_page(self):
         payload = '<script>alert("defect")</script>\n<img src=x onerror=alert(1)>'

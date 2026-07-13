@@ -1,4 +1,4 @@
-# Security Policy
+﻿# Security Policy
 
 TINY MARKET은 시큐어코딩 학습과 과제 검증을 위한 프로젝트입니다. 보안 통제를 구현했지만 실제 금융·상거래 서비스를 운영할 수준의 보증, 인력, 인프라 또는 법적 통제를 제공하지 않습니다.
 
@@ -25,15 +25,14 @@ GitHub **Private vulnerability reporting**이 활성화되어 있다면 저장�
 
 ## 검증 스냅샷
 
-2026-07-12 로컬 최종 검증 결과입니다.
+2026-07-13 최종 감사 변경 후 확정한 현재 작업트리 로컬 결과입니다.
 
-- Django tests 120개 통과
-- Coverage 93% (3,169 statements / 223 miss)
+- Django tests 251개 전부 통과, 147.753초
+- Coverage 94% (6,922 statements / 385 miss)
 - Django check·migration check·운영 `check --deploy` 문제 0건
-- Ruff·format check 오류 0건
-- Bandit 이슈 0건
-- `pip-audit -r requirements.lock --disable-pip` 알려진 취약점 0건
-- 빈 대상 디렉터리에 `--require-hashes -r requirements-dev.lock` 설치 성공
+- Ruff lint·50 files format check 오류 0건, Bandit 8,082 lines/이슈 0건
+- `pip check` 충돌 0건, runtime·development lock 각각 `pip-audit` 알려진 취약점 0건
+- 해시가 고정된 `requirements-dev.lock` 설치 검증 성공
 
 GitHub CI, CodeQL, Dependabot 구성은 저장소에 포함되어 있으나 원격 실행 상태는 GitHub Actions/Security 화면에서 별도로 확인해야 합니다.
 
@@ -68,8 +67,8 @@ GitHub CI, CodeQL, Dependabot 구성은 저장소에 포함되어 있으나 원�
 - Django 표준 password hasher와 검증기, 최소 12자 정책을 사용합니다.
 - 가입 Form은 `username`, 비밀번호만 받고 staff·superuser·정지 필드를 노출하지 않습니다.
 - 로그인 오류는 계정 존재 여부를 구분하지 않는 공통 문구입니다.
-- 일반·관리자 로그인은 계정별 15분 내 5회, 네트워크별 15분 내 원시도 30회 시도를 cache와 DB의 짧은 원자 예약으로 제한합니다.
-- 성공 로그인은 해당 계정 실패 상태만 지우며 네트워크 원시도 카운터는 유지해 유효 계정을 이용한 제한 초기화 우회를 막습니다.
+- 일반·관리자 로그인은 네트워크별 15분 내 원시도 30회를 cache와 DB의 짧은 원자 예약으로 제한해 고비용 비밀번호 검증의 상한을 둡니다. 계정별 실패 표식도 15분 내 5회를 기록하지만, 공격자가 피해자 사용자명만 반복 입력해 정상 비밀번호까지 잠그는 표적 lockout을 막기 위해 계정 표식만으로 올바른 자격 증명을 사전 거부하지 않습니다.
+- 성공 로그인은 해당 계정 실패 표식을 지우고 그 성공 요청이 선점한 네트워크 예약 1회만 반환합니다. 다른 요청의 실패 누적을 일괄 초기화하지 않습니다.
 - 존재 여부와 무관하게 사용자명 HMAC을 같은 DB 경로로 처리합니다. 네트워크 원시도 한도로 신규 행을 IP당 15분 최대 30개로 제한하고, 만료 후 30분이 지난 행은 주기적으로 정리합니다.
 - 로그인 식별자는 원문이 아니라 `SECRET_KEY` 기반 HMAC으로 저장됩니다.
 - 로그인 시 세션이 회전하고 로그아웃은 POST·CSRF 보호 후 세션을 폐기합니다.
@@ -88,6 +87,7 @@ GitHub CI, CodeQL, Dependabot 구성은 저장소에 포함되어 있으나 원�
 - Listing Admin 변경은 현재 DB 행을 잠가 존재 여부를 다시 확인하고, purge 뒤 남은 오래된 객체의 저장으로 삭제 레코드를 되살리는 경로를 거부합니다.
 - 자신, staff, superuser는 일괄 계정 정지 대상에서 제외됩니다.
 - 신고 원문·snapshot·처리 metadata와 메시지·대화·찜·차단·로그인 시도·지갑·거래·원장은 증거 또는 서버 작성 상태로서 Admin 직접 추가·변경·삭제가 불가능합니다.
+- 후기 본문·평점·작성 방향은 Admin에서 직접 편집할 수 없습니다. `change_review` 권한이 있는 관리자만 전용 action으로 공개 후기를 숨기거나, 완료 거래의 양방향 후기 2건이 모두 존재하는 경우에 한해 숨김 후기를 복구할 수 있고 모든 조치를 감사 로그에 남깁니다.
 
 관리자 MFA와 관리 네트워크 제한은 아직 없으며 중요한 잔여 위험입니다.
 
@@ -102,21 +102,23 @@ GitHub CI, CodeQL, Dependabot 구성은 저장소에 포함되어 있으나 원�
 - 사용자 차단·해제도 실제 대화 상대에게만 POST로 허용합니다.
 - 양방향 차단 관계는 새 메시지와 송금을 막습니다.
 - 신고 DB 제약은 대상 사용자와 상품 중 정확히 하나만 허용합니다.
+- 자동 차단·정지는 가입 후 7일이 지난 활성·미정지 계정의 서로 다른 OPEN 신고만 집계합니다. 신규 계정 신고도 버리지 않고 관리자 검토용 OPEN 증거로 보존합니다.
 
 ### 상품 상태와 경쟁조건
 
-판매자 상태 전이는 다음 허용목록만 지원합니다.
+판매자가 직접 수행할 수 있는 상태 전이는 다음 허용목록만 지원합니다.
 
 ```text
-ACTIVE   -> RESERVED | SOLD
-RESERVED -> ACTIVE   | SOLD
-SOLD     -> ACTIVE
+ACTIVE   -> RESERVED
+RESERVED -> ACTIVE
 ```
 
-- 수정·새 대화는 허용 상태에서만 수행합니다.
+- `SOLD`는 판매자가 상태 필드로 만들 수 없고, 상품별 대화에서 판매자가 완료를 요청한 뒤 해당 구매자가 확인한 원자적 거래 서비스에서만 설정합니다.
+- 수정·새 대화는 허용 상태에서만 수행합니다. 상품 수정은 정확히 하나의 필수 revision token과 잠근 최신 `updated_at`을 비교해 누락·중복·오래된 요청을 거부합니다.
 - soft delete는 `DELETED`, 관리자 신고 조치는 `BLOCKED`로 분리합니다.
 - `BLOCKED`, `DELETED`는 판매자 상태 변경 대상이 아닙니다.
 - 상태 변경·수정·삭제는 트랜잭션 안에서 현재 상태를 다시 확인해 오래 열린 요청이 관리자 차단을 되돌리지 못하게 합니다.
+- 완료 상품은 거래·후기 참조용 행을 보존한 채 공개 목록에서 숨길 수 있습니다. 이때 설명·지역·사진·하자 정보는 정리하고 대화·거래·후기 기록은 보존합니다.
 
 별도의 주문·수락·환불 상태 머신은 구현하지 않았습니다.
 
@@ -151,6 +153,7 @@ HSTS preload는 코드 설정만으로 등록되지 않습니다. 실제 등록 
 
 ### 이미지 업로드·응답·삭제
 
+- 전체 multipart body는 CSRF parsing 전 21MiB 누적 상한을 적용합니다. 상품 등록·수정 multipart는 인증 뒤·CSRF 전에 사용자별 10회/시간 admission을 추가해 거부 요청의 `POST`·`FILES`·body를 읽지 않습니다. 이는 reverse proxy의 body·연결·속도·timeout·source-network 제한을 대체하지 않습니다.
 - JPEG·PNG·WebP, 5MB 이하, 1,200만 픽셀 이하, 단일 프레임만 허용합니다.
 - 바이트 형식과 선언 Content-Type을 확인합니다.
 - EXIF 방향 보정 후 UUID 파일명의 JPEG로 재인코딩해 원본 이름과 메타데이터를 제거합니다.
@@ -187,8 +190,8 @@ ORM 보호는 직접 SQL·DB 관리자·파일 수준 SQLite 변경을 막지 �
 
 - 직접 런타임·개발 의존성은 `requirements.in`, `requirements-dev.in`, 해시 잠금 결과는 `requirements.lock`, `requirements-dev.lock`으로 관리합니다.
 - CI는 설치 도구까지 포함한 `pip install --require-hashes -r requirements-dev.lock`을 사용합니다.
-- pip-audit도 `requirements.lock`을 대상으로 실행합니다.
-- CI는 Django·migration·운영 검사, Ruff·format, Bandit, 85% coverage gate, pip-audit를 수행하도록 구성되어 있습니다.
+- pip-audit는 runtime `requirements.lock`과 development `requirements-dev.lock`을 모두 대상으로 실행합니다.
+- CI는 Django·migration·운영 검사, Ruff·format, Bandit, 85% coverage gate, 두 lock의 pip-audit를 수행하도록 구성되어 있습니다.
 - CodeQL은 Python `security-extended` 쿼리를 push, PR, 주간 일정으로 실행하도록 구성되어 있습니다.
 - Dependabot은 Python 및 GitHub Actions 업데이트를 매주 확인합니다.
 - 외부 GitHub Actions는 commit SHA로 고정하고 workflow 권한을 최소화했습니다.
@@ -202,9 +205,12 @@ ORM 보호는 직접 SQL·DB 관리자·파일 수준 SQLite 변경을 막지 �
 - **신원 보증 없음:** 이메일, 전화번호, 실명, GPS를 확인하지 않습니다.
 - **실제 거래 보호 없음:** 결제, 에스크로, 배송, 환불, 정산, 분쟁 배상이 없습니다.
 - **메시지:** 참여자 접근통제와 TLS를 전제로 하지만 종단간 암호화가 아닙니다.
-- **수동 moderation:** 신고·금지 상품 판정은 관리자 검토이며 SLA나 자동 탐지가 없습니다.
+- **moderation 오탐·공모:** 7일 신규 계정 유예로 즉시 Sybil 공격 비용을 높였지만, 성숙 계정 공모를 판별하는 평판·graph 분석과 이의제기 SLA는 없습니다.
 - **파일 저장:** 로컬 호스트 권한과 Pillow 보안 업데이트에 의존하며 orphan 정리가 필요할 수 있습니다.
-- **원장 복구:** 반전 필드는 있으나 사용자 취소·관리자 반전 workflow가 없습니다.
+- **원장 복구:** 구현되지 않은 반전 종류·관계 필드는 공격면 축소를 위해 제거했습니다. 사용자 취소·관리자 보정이 필요하면 별도 권한·승인·대사·감사 설계를 먼저 추가해야 합니다.
+- **증거 보존:** 신고 이미지 증거의 법적 보존·파기 기간, legal hold, 사용자 삭제 요청 충돌 정책과 자동 purge 작업은 아직 없습니다.
+- **알림 fan-out:** 저장 검색·가격 알림 fan-out은 요청 commit 뒤 같은 프로세스에서 수행합니다. 운영 규모에서는 durable queue·재시도 worker·지표가 필요합니다.
+- **거래 신뢰도:** `Trade.COMPLETED`는 두 계정의 애플리케이션 내 상호 확인이며 결제·배송·실명 거래를 외부 증명하지 않습니다. 계정 공모로 평판을 부풀릴 위험은 운영 평판 정책 대상입니다.
 - **가용성:** WAF·CDN·큐·대역폭 제한과 DDoS 방어가 없습니다.
 
 ## 운영 배포 전 필수 점검
@@ -229,6 +235,7 @@ ruff check .
 ruff format --check .
 bandit -c pyproject.toml -r accounts config market
 pip-audit -r requirements.lock --disable-pip
+pip-audit -r requirements-dev.lock --disable-pip
 python manage.py check --deploy
 ```
 

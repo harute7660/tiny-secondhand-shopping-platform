@@ -1,13 +1,27 @@
 import uuid
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.files.base import ContentFile
+from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import UserBlock
 
-from .models import Conversation, Listing, Review, Trade
+from .models import (
+    Conversation,
+    Listing,
+    ListingImage,
+    Review,
+    Trade,
+    TradeEvidence,
+    TradeImageEvidence,
+)
+from .services import request_trade_completion
 
 # Fixed credential exists only inside an isolated test database.
 PASSWORD = "Correct-Horse-Battery-99!"  # nosec B105
@@ -251,7 +265,7 @@ class TradeReviewSecurityTests(TestCase):
         self.assertEqual(self.client.get(unavailable_review).status_code, 404)
         self.assertFalse(Review.objects.exists())
 
-    def test_completed_trade_blocks_update_delete_reopen_and_new_contact(self):
+    def test_completed_trade_blocks_update_reopen_and_new_contact(self):
         trade = self._complete_trade()
         original_title = self.listing.title
         self.client.force_login(self.seller)
@@ -264,10 +278,6 @@ class TradeReviewSecurityTests(TestCase):
             403,
         )
         self.assertEqual(
-            self.client.post(reverse("market:listing_delete", args=[self.listing.pk])).status_code,
-            403,
-        )
-        self.assertEqual(
             self.client.post(
                 reverse("market:listing_update", args=[self.listing.pk]),
                 {"title": "완료 후 위조 수정"},
@@ -276,17 +286,13 @@ class TradeReviewSecurityTests(TestCase):
         )
 
         # Defense in depth: even if an external/admin bug makes the listing ACTIVE,
-        # the completed Trade must still prevent all ordinary mutation paths.
+        # the completed Trade must still prevent editing and reopening paths.
         Listing.objects.filter(pk=self.listing.pk).update(status=Listing.Status.ACTIVE)
         self.assertEqual(
             self.client.post(
                 reverse("market:listing_update", args=[self.listing.pk]),
                 {"title": "완료 후 위조 수정"},
             ).status_code,
-            403,
-        )
-        self.assertEqual(
-            self.client.post(reverse("market:listing_delete", args=[self.listing.pk])).status_code,
             403,
         )
         self.assertEqual(
@@ -311,6 +317,157 @@ class TradeReviewSecurityTests(TestCase):
         self.assertFalse(
             Conversation.objects.filter(listing=self.listing, buyer=self.outsider).exists()
         )
+
+    def test_sold_detail_never_offers_a_conversation_start_action(self):
+        self._complete_trade()
+        detail_url = reverse("market:listing_detail", args=[self.listing.pk])
+        contact_url = reverse("market:conversation_start", args=[self.listing.pk])
+
+        self.client.logout()
+        anonymous = self.client.get(detail_url)
+        self.assertEqual(anonymous.status_code, 200)
+        self.assertContains(anonymous, "판매 완료된 상품이에요")
+        self.assertNotContains(anonymous, contact_url)
+        self.assertNotContains(anonymous, "로그인하고 거래 대화 시작")
+
+        self.client.force_login(self.outsider)
+        authenticated = self.client.get(detail_url)
+        self.assertEqual(authenticated.status_code, 200)
+        self.assertContains(authenticated, "판매 완료된 상품이에요")
+        self.assertNotContains(authenticated, contact_url)
+
+    def test_pending_trade_prevents_listing_archive(self):
+        trade = self._request_trade()
+        self.client.force_login(self.seller)
+        archive_url = reverse("market:listing_delete", args=[self.listing.pk])
+
+        self.assertEqual(self.client.get(archive_url).status_code, 403)
+        self.assertEqual(self.client.post(archive_url).status_code, 403)
+        self.listing.refresh_from_db()
+        trade.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.RESERVED)
+        self.assertEqual(trade.status, Trade.Status.PENDING_BUYER)
+
+    def test_completed_listing_can_be_archived_without_losing_trade_or_reviews(self):
+        with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.listing.image.save(
+                "completed-primary.jpg",
+                ContentFile(b"private-primary-image"),
+                save=True,
+            )
+            extra = ListingImage.objects.create(
+                listing=self.listing,
+                image=ContentFile(b"private-extra-image", name="completed-extra.jpg"),
+                position=1,
+            )
+            self.listing.refresh_from_db()
+            primary_url = reverse("market:listing_image", args=[self.listing.pk])
+            extra_url = reverse(
+                "market:listing_extra_image",
+                args=[self.listing.pk, extra.pk],
+            )
+            primary_name = self.listing.image.name
+            extra_name = extra.image.name
+            storage = self.listing.image.storage
+
+            trade = self._complete_trade()
+            self._post_review(
+                self.buyer,
+                trade,
+                rating=5,
+                body="설명과 같은 상품이었습니다.",
+            )
+            self._post_review(
+                self.seller,
+                trade,
+                rating=5,
+                body="약속을 잘 지킨 구매자였습니다.",
+            )
+            self.assertEqual(Review.objects.filter(trade=trade).count(), 2)
+
+            self.client.force_login(self.seller)
+            archive_url = reverse("market:listing_delete", args=[self.listing.pk])
+            confirmation = self.client.get(archive_url)
+            self.assertEqual(confirmation.status_code, 200)
+            self.assertContains(confirmation, "완료 상품을 목록에서 숨길까요?")
+            self.assertContains(confirmation, "거래·후기 기록은 보존됩니다")
+            with self.captureOnCommitCallbacks(execute=True):
+                archived = self.client.post(archive_url)
+
+            self.assertEqual(archived.status_code, 302)
+            self.listing.refresh_from_db()
+            trade.refresh_from_db()
+            self.assertEqual(self.listing.status, Listing.Status.DELETED)
+            self.assertEqual(self.listing.title, "숨김 처리된 상품")
+            self.assertEqual(self.listing.description, "")
+            self.assertEqual(self.listing.region, "")
+            self.assertEqual(self.listing.defect_details, "")
+            self.assertFalse(self.listing.image)
+            self.assertFalse(ListingImage.objects.filter(listing=self.listing).exists())
+            # Public listing references are removed, while private immutable
+            # evidence keeps the underlying files for an authorized dispute.
+            self.assertTrue(storage.exists(primary_name))
+            self.assertTrue(storage.exists(extra_name))
+            self.assertEqual(trade.status, Trade.Status.COMPLETED)
+            self.assertEqual(Review.objects.filter(trade=trade).count(), 2)
+            evidence = TradeEvidence.objects.get(trade=trade)
+            self.assertEqual(evidence.title_snapshot, "비공개 상품 식별자 primary")
+            self.assertEqual(evidence.price_points_snapshot, 8_765_431)
+            self.assertEqual(evidence.listing_status_snapshot, Listing.Status.ACTIVE)
+            self.assertEqual(
+                list(evidence.images.values_list("position", "storage_name")),
+                [(0, primary_name), (1, extra_name)],
+            )
+            self.assertTrue(
+                all(
+                    len(digest) == 64
+                    for digest in TradeImageEvidence.objects.filter(evidence=evidence).values_list(
+                        "sha256", flat=True
+                    )
+                )
+            )
+            self.assertEqual(self.client.get(primary_url).status_code, 404)
+            self.assertEqual(self.client.get(extra_url).status_code, 404)
+
+            self.client.logout()
+            self.assertEqual(self.client.get(primary_url).status_code, 404)
+            self.assertEqual(self.client.get(extra_url).status_code, 404)
+
+    def test_duplicate_completion_insert_race_reuses_same_pending_trade(self):
+        now = timezone.now()
+        existing = Trade.objects.create(
+            listing=self.listing,
+            conversation=self.conversation,
+            status=Trade.Status.PENDING_BUYER,
+            initial_listing_status=Listing.Status.ACTIVE,
+            seller_confirmed_at=now,
+        )
+        original_filter = Trade.objects.filter
+        active_lookup_count = 0
+
+        def simulate_stale_precheck(*args, **kwargs):
+            nonlocal active_lookup_count
+            queryset = original_filter(*args, **kwargs)
+            if kwargs.get("listing") == self.listing and kwargs.get("status__in") == (
+                Trade.Status.PENDING_BUYER,
+                Trade.Status.COMPLETED,
+            ):
+                active_lookup_count += 1
+                if active_lookup_count == 1:
+                    return queryset.none()
+            return queryset
+
+        with (
+            patch.object(Trade.objects, "filter", side_effect=simulate_stale_precheck),
+            patch.object(Trade, "full_clean", autospec=True),
+            patch.object(Trade, "save", side_effect=IntegrityError("simulated race")),
+        ):
+            result = request_trade_completion(self.seller, self.conversation.pk)
+
+        self.listing.refresh_from_db()
+        self.assertEqual(result.pk, existing.pk)
+        self.assertEqual(Trade.objects.filter(listing=self.listing).count(), 1)
+        self.assertEqual(self.listing.status, Listing.Status.RESERVED)
 
     def test_seller_block_after_request_cannot_suppress_buyer_confirmation(self):
         trade = self._request_trade()
