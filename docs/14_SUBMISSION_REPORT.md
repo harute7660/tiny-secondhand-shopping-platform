@@ -70,6 +70,8 @@ README에는 Windows PowerShell과 macOS/Linux 기준 설치·실행 명령, has
 - [ ] 제출 파일명을 `[WHS][secure-coding][XX반]이름(전화번호뒷자리).pdf` 형식으로 저장
 - [ ] LMS 제출 완료 화면 확인
 
+로컬 clean clone에서는 `check`, `makemigrations --check --dry-run`, `migrate --noinput`이 통과했다. 다만 Public GitHub에서 새로 clone한 fresh venv 설치와 원격 CI는 저장소 공개 후 별도 확인해야 한다.
+
 ## 6. 보안 약점 발견 및 조치
 
 개발 중 확인한 주요 보안 약점과 조치는 `docs/04_SECURITY_FINDINGS.md`에 SEC-001~061, UX-001로 기록했다. 마지막 감사에서 특히 보완한 항목은 다음과 같다.

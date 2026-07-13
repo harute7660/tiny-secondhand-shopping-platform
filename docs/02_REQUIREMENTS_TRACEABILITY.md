@@ -25,7 +25,7 @@
 |---|---|---|---|
 | REQ-001·003·007 | 로컬 최종 품질 게이트 충족: 전체 251개·coverage 94%, 정적·공급망·운영 PASS | 최종 commit SHA를 만든 뒤 수치와 SHA를 제출 문서에 고정 | 명령 로그, 최종 SHA, 문서 동기화 결과 |
 | REQ-004 | Public GitHub URL·제출 SHA·tag와 로그아웃 공개 결과 없음 | 최종 commit 후 Public 저장소에 push하고 시크릿/로그아웃 창에서 열기 | repository URL, SHA, 확인 시각, 화면 캡처 |
-| REQ-005 | 새 디렉터리 clean clone에서 README 재현 미실행 | Public 저장소를 새 경로에 clone해 hash 설치·migration·test·server를 README만 보고 실행 | 명령 로그와 대상 SHA |
+| REQ-005 | 로컬 clean clone에서 `check`, migration drift, `migrate --noinput`은 통과. Public 저장소 clone과 fresh venv hash install은 아직 미실행 | Public 저장소를 새 경로에 clone해 hash 설치·test·server를 README만 보고 실행 | 명령 로그와 대상 SHA |
 | REQ-008 | 최종 PDF와 클릭 가능한 GitHub 링크 없음 | 보고서 placeholder에 URL·SHA·원격 CI를 넣고 PDF 렌더링 | PDF에서 클릭한 공개 URL |
 | REQ-009 | 반·이름·전화번호 뒷자리 정보가 없어 최종 파일명을 만들 수 없음 | 개인정보를 입력하고 공백 없는 지정 정규식으로 저장 | 최종 파일명과 재열기 결과 |
 | REQ-010 | 원격 Actions/CodeQL·LMS 제출 결과 없음 | 제출 SHA의 원격 검사 성공을 확인한 뒤 2026-07-24 23:59:59 전 업로드 | Actions/CodeQL URL, LMS 확인 |

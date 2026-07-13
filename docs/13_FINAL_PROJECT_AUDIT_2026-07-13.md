@@ -98,7 +98,7 @@
 
 - [x] 브라우저 spot-check: 1440×900·375×812 홈의 html/body overflow 0, 웜톤 배경 정상, Django 진단 문구 없음; 로그인 password·CSRF 존재/overflow 0; 무작위 URL custom 404와 traceback·내부 경로 비노출
 
-- [ ] 빈 디렉터리 clean clone에서 README만 보고 설치·migration·실행·테스트
+- [x] 로컬 clean clone에서 README 기준 핵심 재현 확인: `check`, `makemigrations --check --dry-run`, `migrate --noinput` 통과
 - [ ] Git 전체 이력 secret/개인정보 검사, Public 저장소 push, 로그아웃 접근 확인
 - [ ] 원격 GitHub Actions·CodeQL·Dependabot 성공과 동일 SHA 확인
 - [ ] 판매자·구매자 두 세션으로 후기·알림·다중사진·하자·완료 상품 숨김 전체 UAT
