@@ -51,9 +51,10 @@
 - [x] SEC-032 수정: `SafeExceptionMiddleware`로 DEBUG에서도 처리되지 않은 예외·resolver 404를 비진단 응답으로 변환함
 - [x] DEBUG True/False의 400·403·404·500·CSRF, POST 비밀값·URL pattern 비노출, 보안 헤더 자동 테스트 추가·통과
 - [x] 500 오류 template 실패 시 DB·세션·URL reverse·template engine에 의존하지 않는 standalone fallback 추가·통과
+- [x] 이미지 첨부 영역은 저채도 세이지로 한정하고 전용 현재 이미지 위젯은 guarded URL만 사용하며 내부 저장명·`MEDIA_URL`을 HTML에 노출하지 않음을 `ListingSecurityTests` 26개로 검증
 - [ ] **BLOCKER:** 발표·배포 서버를 `DEBUG=False`로 실행하고 reverse proxy까지 포함한 오류 화면에 traceback·절대경로·버전·설정·POST 값이 없는지 수동 확인
 - [ ] **[권장]** plain text 400·429와 기본 405를 공통 UI로 통일하고 429 `Retry-After`를 제공할지 결정
-- [x] 변경 후 전체 tests **168개**, coverage **4,190 statements / 248 miss / 94%**, Ruff·Bandit·pip-audit·deploy check 통과 결과 기록
+- [x] 변경 후 전체 tests **170개 / 102.496초**, coverage 계측 실행 **170개 / 103.560초, 4,222 statements / 248 miss / 94%**, Ruff lint·format 37개 파일, Bandit 0건, Django check 0건, migration 변경 없음, CSS 중괄호 935/935 결과 기록
 - [ ] 정상 가입·상품·대화·신고·송금 흐름을 한 번씩 수행하며 DevTools Network의 예상하지 못한 500과 서버 traceback이 0건인지 확인
 - [ ] 실제 320px·200% 확대, 키보드 전용, 모바일 기기, 스크린리더 확인
 - [ ] **BLOCKER:** GitHub Public repository 생성·push·로그아웃 공개 확인
@@ -98,6 +99,8 @@
 - [ ] 판매자 A가 제목·설명·가격·카테고리·상태·지역으로 상품 등록 성공
 - [ ] 이미지 없이도 선택 사항으로 상품 등록 성공
 - [ ] 정상 JPEG·PNG·WebP 이미지가 JPEG로 재처리되어 표시됨
+- [ ] 전체 화면은 블랙·화이트이고 첨부 컨트롤 영역만 저채도 세이지이며, 실제 상품 사진에는 흑백 filter가 적용되지 않음
+- [ ] 상품 수정 화면의 현재 이미지 미리보기가 정상 표시되며 페이지 소스·링크에 내부 저장명이나 `/_private-media/` 직접 경로가 보이지 않음
 - [ ] 목록과 상세 화면의 제목·가격·판매자·상태가 DB 내용과 일치함
 - [ ] 헤더의 내 상품에서 로그인 사용자의 삭제 전 상품만 페이지 단위로 보이고 수정·상태 관리 경로로 이동할 수 있음
 - [ ] 판매자 A가 텍스트만 수정하면 기존 이미지가 유지됨
@@ -272,6 +275,7 @@
 - [ ] label, help text, error의 ARIA 참조가 일치함
 - [ ] `prefers-reduced-motion`에서 불필요한 이동 효과가 꺼짐
 - [ ] 색상에만 의존하지 않고 상태·오류를 텍스트로도 구분함
+- [ ] 저채도 세이지 첨부 영역의 label·help·파일 선택 버튼·focus·오류 상태가 명도 대비와 200% 확대 조건에서 읽기 쉬움
 
 증적 스크린샷: `____________________________________________________________`
 
@@ -293,6 +297,7 @@
 - [ ] 상품·신고·송금의 상태 전이와 금지 전이가 있음
 - [ ] 브라우저·Django·DB·cache·private storage의 신뢰경계가 있음
 - [ ] 개인정보 최소화, 외부 서비스 제외, 실제 결제 대신 DEMO POINT를 선택한 이유가 있음
+- [ ] 판매자·구매자의 정확한 실시간 GPS 상호 공유와 교통수단별 ETA를 현재 제외한 이유를 위치 개인정보·명시적 동의·보존 최소화·외부 지도 API 운영 범위와 함께 설명함
 - [ ] SQLite·LocMemCache의 개발 한계와 PostgreSQL·Redis 전환 조건이 있음
 - [ ] 전체 채팅에서 WebSocket/SSE 대신 제한된 2초 polling을 선택한 이유·최대 2초 지연·규모 증가 시 전환 조건이 있음
 - [ ] 신고 자동조치에서 고유 OPEN 3인·자기신고 제외·보호 계정·행 잠금·임시조치·관리자 복구를 선택한 이유가 있음

@@ -125,3 +125,23 @@
 - 통제: 응답과 보안 로그에 exception 객체, 요청 본문, 경로를 보간하지 않는다. 정상 validation 400, 405, 429와 resolved JSON 404는 재작성하지 않는다. SecurityHeadersMiddleware가 CSP·`nosniff`·`DENY`·`private, no-store`를 오류 응답에도 적용한다.
 - 검토한 대안: 발표할 때만 환경변수를 기억하는 절차는 사람 실수에 취약해 단독 통제로 거절했다. 모든 오류를 500으로 바꾸는 middleware는 정상 상태·API 의미를 손상하므로 예상된 HTTP 예외의 status를 보존한다.
 - 증적: `config/middleware.py`, `config/views.py`, `config/tests.py`의 DEBUG/production·POST 비밀값·404 pattern·template failure·헤더 회귀.
+
+## ADR-015 - 모노크롬 UI의 세이지 업로드 예외와 보호된 현재 이미지 위젯
+
+- 상태: 확정
+- 결정: 전체 UI chrome은 ADR-009의 검정·흰색·중립 회색을 유지하되, 상품 등록·수정의 이미지 첨부 영역만 저채도 세이지 배경 `#edf4ef`와 짙은 녹색 조작색 `#335c45`를 사용한다. 업로드한 상품 사진은 상품 정보 왜곡을 막기 위해 원색으로 표시한다.
+- 이유: 파일 선택은 일반 텍스트 입력과 성격이 다른 고위험 조작이므로 색과 경계로 범위를 명확히 구분할 필요가 있다. 저채도 색을 좁은 영역에만 적용해 시각적 부담을 낮추되, 특정 색이 의학적으로 눈의 피로를 줄인다고 단정하지 않고 텍스트·테두리·focus 상태로도 의미를 전달한다.
+- 보안 결정: Django 기본 `ClearableFileInput`의 현재 파일명과 `FieldFile.url`을 그대로 렌더링하지 않는다. `ProtectedListingImageInput`은 소유자 검사를 수행하는 `market:listing_image` URL만 만들고, 일반화한 현재 이미지 안내·미리보기·삭제 checkbox만 표시해 내부 저장명과 무효 `/_private-media/` 링크 노출을 제거한다.
+- 검증 경계: 브라우저 `accept`와 도움말은 사용성 보조일 뿐 신뢰하지 않는다. JPEG·PNG·WebP, 크기·픽셀·단일 프레임·실제 바이트 형식 검사는 기존 서버 sanitizer가 계속 수행한다.
+- 검토한 대안: 업로드 영역까지 완전한 흑백으로 유지하면 파일 선택 경계를 알아보기 어렵고, 기본 위젯을 CSS로만 꾸미면 내부 저장명·직접 URL 출력 문제는 남는다.
+- 증적: `market/forms.py`, `market/templates/market/widgets/protected_listing_image_input.html`, `templates/market/listing_form.html`, `static/css/site.css`, `test_image_upload_has_scoped_accessible_presentation`, `test_existing_image_widget_uses_guarded_url_without_storage_name`.
+
+## ADR-016 - 정확한 양측 GPS 대신 공공 약속장소와 각자 ETA 범위
+
+- 상태: 제안·구현 보류
+- 제안: `거래하기`를 누르면 판매자·구매자의 정확한 좌표를 서로 표시하는 방식은 채택하지 않는다. 먼저 대화 참여자만 접근할 수 있는 거래 약속에서 공공장소·시간을 제안하고 상대가 수락한 뒤, 각 사용자가 자신의 현재 위치에서 약속장소까지 자차·대중교통 경로를 개별 조회한다. 상대에게는 원좌표나 이동 궤적 대신 선택적으로 갱신한 도착예정 범위만 보여 준다.
+- 이유: 정확한 상호 위치 공유는 집·직장·생활 동선 추론, 스토킹, 강압적 동의, 오래된 위치의 오인과 제3자 API 전송이라는 새 고위험 공격면을 만든다. 과제의 중고거래 편의는 공공장소 합의와 ETA 범위만으로도 대부분 달성할 수 있다.
+- 현재 경계: 위치 기능과 외부 지도 호출은 구현하지 않았으며 `Permissions-Policy: geolocation=()`와 CSP `connect-src 'self'`를 그대로 유지한다. 따라서 현재 사이트는 브라우저 위치 권한을 요청하거나 좌표를 수집·저장·전송하지 않는다.
+- 후보와 선행조건: 자차·대중교통을 한 공급자에서 제공하는 TMAP API를 후보로 검토했지만 확정하지 않았다. 구현 전 API 키의 서버 비밀 관리, HTTPS와 동작 시점의 명시적 동의, 대화 참여자 객체 인가, 목적·보존기간·삭제 방법 고지, 원좌표 비저장 또는 짧은 TTL, 로그 마스킹, 철회·만료·재사용 방지, 공급자 약관·할당량과 국내 위치정보 관련 법률 검토가 필요하다.
+- 구현 전환 조건: 공급자와 비용·할당량을 확정하고 개인정보·위치정보 처리방침과 테스트 계정을 준비한 뒤 별도 위협 모델·마이그레이션·인가·rate limit·보존 삭제 테스트를 통과할 때만 `geolocation`과 외부 `connect-src`를 필요한 거래 약속 화면에 한정해 연다.
+- 참고: [TMAP API](https://tmapapi.tmapmobility.com/), [TMAP 대중교통 API](https://transit.tmapmobility.com/docs/routes), [W3C Geolocation](https://www.w3.org/TR/geolocation/).

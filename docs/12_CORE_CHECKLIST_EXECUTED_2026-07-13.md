@@ -8,7 +8,7 @@
 - 완료 시각: `2026-07-13 17:43 +09:00`
 - 코드 확인: `accounts`·`community`·`market`·`config`의 route, model, migration, view, form, template, 정적 JavaScript, Admin, test를 직접 대조했다.
 - 자동 증적: 공개 프로필·마이페이지·전체 채팅·상품·신고 변경 범위의 6개 테스트 클래스 **79개**가 53.066초에 통과했다.
-- 전체 suite·coverage: **168개 전부 통과 / 104.916초 / 4,190 statements / 248 miss / 94%**. 아래 79개는 변경 기능의 직접 분기 증적이고, 168개는 전체 통합 영향 증적이다.
+- 전체 suite: **170개 전부 통과 / 102.496초**. Coverage 계측 실행도 **170개 전부 통과 / 103.560초 / 4,222 statements / 248 miss / 94%**였다. 아래 79개는 PDF 기능 변경의 직접 분기 증적이고, 이미지 첨부 UI는 `ListingSecurityTests` 26개, 170개는 전체 통합 영향 증적이다.
 
 ```powershell
 .\.venv\Scripts\python.exe manage.py test `
@@ -27,11 +27,11 @@
 
 | ID | 상태 | 직접 확인한 구현·보안 통제 | 자동·코드 증적 |
 |---|:---:|---|---|
-| F-01 | **PASS** | `/accounts/signup/`·`/accounts/login/`; 정규화한 사용자명의 대소문자 무관 UNIQUE, Django password hash, 공개 privilege 필드 배제 | 기존 `SignupSecurityTests`·`LoginSecurityTests`, 79개 변경 기능 묶음과 최종 전체 168개 회귀 통과 |
+| F-01 | **PASS** | `/accounts/signup/`·`/accounts/login/`; 정규화한 사용자명의 대소문자 무관 UNIQUE, Django password hash, 공개 privilege 필드 배제 | 기존 `SignupSecurityTests`·`LoginSecurityTests`, 79개 변경 기능 묶음과 최종 전체 170개 회귀 통과 |
 | F-02 | **PASS** | `/accounts/users/<username>/`; `User.bio` 최대 500자. 활성 일반회원의 username·bio primitive만 template에 전달해 email·권한·정지정보를 공개하지 않음 | `PublicProfileSecurityTests`: 대소문자 조회, XSS escape, inactive/suspended/staff/superuser 404, POST 405 |
 | F-03 | **PASS** | `/accounts/me/`에서 bio만 allowlist 수정. `/accounts/me/password/`는 현재 비밀번호, Django 강도 validator, 256자 사전상한, 사용자당 10회/시간, `update_session_auth_hash` 적용 | `MyPageSecurityTests`: 인증·no-store, mass assignment 거부, 500자, 현재 비밀번호, 강도, 과대입력, rate, 세션 회전·유지, 정지 세션 거부 |
-| F-04 | **PASS** | `ListingForm`·`listing_create`가 제목·설명·가격·사진을 검증하고 seller·초기 상태를 서버 세션에서 결정 | `ListingSecurityTests`: seller/status 위조, 가격, quota/rate, MIME·시그니처·재인코딩 회귀 |
-| F-05 | **PASS** | `/listings/mine/`와 header의 `내 상품` 링크, 세션 소유자의 삭제 전 상품만 20개 pagination. 수정·상태·soft delete는 소유자만 가능 | 소유자 격리·위조 query 무시 테스트. SEC-031은 `FileField.save_form_data()`로 `False` 삭제 sentinel을 정규화하고 유지·삭제·교체·삭제+업로드 모순·불량 이미지 회귀 통과 |
+| F-04 | **PASS** | `ListingForm`·`listing_create`가 제목·설명·가격·사진을 검증하고 seller·초기 상태를 서버 세션에서 결정. 첨부 컨트롤만 저채도 세이지를 쓰고 MIME accept/help를 명시 | `ListingSecurityTests` 26개: seller/status 위조, 가격, quota/rate, MIME·시그니처·재인코딩, 첨부 UI 회귀 |
+| F-05 | **PASS** | `/listings/mine/`와 header의 `내 상품` 링크, 세션 소유자의 삭제 전 상품만 20개 pagination. 수정·상태·soft delete는 소유자만 가능. 현재 이미지는 guarded URL로만 표시 | 소유자 격리·위조 query 무시 테스트. SEC-031 삭제 sentinel과 유지·삭제·교체·모순·불량 이미지, 내부 저장명·`MEDIA_URL` 비노출 회귀 통과 |
 | F-06 | **PASS** | 비회원 홈은 공개 상태이면서 활성·비정지 판매자의 상품만 노출하고 차단·삭제 상품을 제외 | 공개 목록·ORM 검색·차단 제외·private image 회귀 통과 |
 | F-07 | **PASS** | UUID 상품 상세에 상품명·설명·가격·사진·상태·판매자 정보와 공개 프로필 링크 제공 | 상세 XSS escape, 비공개 접근 통제, 판매자 프로필 link 회귀 통과 |
 | F-08 | **PASS** | `/community/` 전체 채팅, `/messages/` 증분 JSON, `/send/` POST. `GlobalChatMessage(sender FK, body 1000, created_at, time/id index)`와 2초 polling 적용 | 인증·CSRF·서버 sender·XSS·signed cursor·요청 상한·양방향 차단·rate·no-store·read-only Admin 테스트 통과 |
@@ -67,10 +67,11 @@
 
 ## 최종 통합·브라우저 증적
 
-- `manage.py test --verbosity 1`: **168개 통과 / 104.916초 / system check 문제 0건**
-- Coverage: **4,190 statements / 248 miss / 94%**
-- Ruff lint·format, Bandit(`community` 포함), pip-audit, `check --deploy --fail-level WARNING`: 문제 0건
-- `manage.py check`: 문제 0건; `makemigrations --check --dry-run`: 변경 없음; `accounts.0005`·`community.0001` 적용 완료
+- `market.tests.ListingSecurityTests`: **26개 통과 / 18.104초** — 저채도 세이지 첨부 범위, MIME accept/help, guarded 현재 이미지 URL, 내부 저장명·`MEDIA_URL` 비노출, 모바일 CSS 검증
+- `manage.py test --verbosity 1`: **170개 통과 / 102.496초 / system check 문제 0건**
+- Coverage: 계측 실행 **170개 통과 / 103.560초 / 4,222 statements / 248 miss / 94%**
+- Ruff lint·37개 파일 format, Bandit(`community` 포함), pip-audit, `check --deploy --fail-level WARNING`: 문제 0건
+- `manage.py check`: 문제 0건; `makemigrations --check --dry-run`: 변경 없음; `accounts.0005`·`community.0001` 적용 완료; CSS 중괄호 935/935
 - 실제 브라우저: 이미지가 있는 상품의 `비우기` 저장 → 정상 redirect·성공 메시지·placeholder·DB 빈 값·기존 파일 삭제·AttributeError/Traceback 0건
 - 실제 브라우저: DEBUG 미등록 URL의 일반 404에서 URL pattern·Django 버전·traceback 비노출; 1440px·320px 점검 페이지의 문서 overflow 0, 외부 asset 0, console 오류 0
 

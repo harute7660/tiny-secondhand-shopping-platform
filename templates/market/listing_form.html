@@ -34,7 +34,7 @@
       {% csrf_token %}
       {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
       {% for field in form.visible_fields %}
-        <div class="field-group{% if field.errors %} field-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} checkbox-field{% endif %}">
+        <div class="field-group{% if field.errors %} field-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} checkbox-field{% endif %}{% if field.field.widget.input_type == 'file' %} upload-field{% endif %}">
           {% if field.field.widget.input_type == 'checkbox' %}
             <div class="checkbox-line">{{ field }}<label for="{{ field.id_for_label }}">{{ field.label }}</label></div>
           {% else %}

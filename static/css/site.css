@@ -5924,3 +5924,176 @@ input:-webkit-autofill:focus {
     padding-bottom: 60px;
   }
 }
+
+/* Image upload is the sole calm-color exception to the monochrome interface. */
+.listing-form .upload-field {
+  padding: 18px;
+  color: #24352a;
+  background: #edf4ef;
+  border: 1px solid #a5b8aa;
+  border-radius: 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.listing-form .upload-field > label,
+.listing-form .upload-field a {
+  color: #294a37;
+}
+
+.listing-form .upload-field a {
+  font-weight: 800;
+  text-underline-offset: 3px;
+}
+
+.listing-form .upload-field .field-help {
+  color: #425f4d;
+}
+
+.listing-form .current-image-panel {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 13px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(77, 114, 91, 0.35);
+  border-radius: 12px;
+}
+
+.listing-form .current-image-panel img {
+  display: block;
+  width: 88px;
+  height: 72px;
+  object-fit: cover;
+  background: #dfe9e2;
+  border: 1px solid #91a897;
+  border-radius: 9px;
+}
+
+.listing-form .current-image-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.listing-form .current-image-copy > span,
+.listing-form .upload-input-label {
+  color: #4d6857;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.listing-form .current-image-copy strong {
+  color: #24352a;
+  font-size: 0.86rem;
+}
+
+.listing-form .current-image-clear {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+}
+
+.listing-form .current-image-clear input {
+  width: 19px;
+  height: 19px;
+  margin: 0;
+}
+
+.listing-form .current-image-clear label {
+  color: #294a37;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.listing-form .upload-input-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.listing-form .upload-field input[type="file"] {
+  min-width: 0;
+  color: #24352a;
+  background: #f9fcfa;
+  border-color: #91a897;
+}
+
+.listing-form .upload-field input[type="file"]:hover {
+  border-color: #4d725b;
+  background: #ffffff;
+}
+
+.listing-form .upload-field input[type="file"]:focus {
+  border-color: #335c45;
+  box-shadow: 0 0 0 4px rgba(51, 92, 69, 0.18);
+}
+
+.listing-form .upload-field input[type="file"]::file-selector-button {
+  min-height: 44px;
+  margin-right: 12px;
+  padding: 10px 15px;
+  color: #ffffff;
+  background: #335c45;
+  border: 1px solid #335c45;
+  border-radius: 9px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.listing-form .upload-field input[type="file"]:hover::file-selector-button {
+  background: #244534;
+  border-color: #244534;
+}
+
+.listing-form .upload-field input[type="checkbox"] {
+  accent-color: #335c45;
+}
+
+.listing-form .upload-field.field-error {
+  background: #fff5f5;
+  border-color: var(--danger);
+}
+
+.listing-form .upload-field input[type="file"]:disabled {
+  color: #5b645e;
+  background: #e3e8e4;
+  border-color: #a7b0aa;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.listing-form .upload-field input[type="file"]:disabled::file-selector-button {
+  color: #5b645e;
+  background: #cdd6d0;
+  border-color: #a7b0aa;
+  cursor: not-allowed;
+}
+
+@media (max-width: 470px) {
+  .listing-form .upload-field {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .listing-form .current-image-panel {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 11px;
+    padding: 10px;
+  }
+
+  .listing-form .current-image-panel img {
+    width: 72px;
+    height: 66px;
+  }
+
+  .listing-form .upload-field input[type="file"]::file-selector-button {
+    display: block;
+    width: 100%;
+    margin: 0 0 9px;
+  }
+}

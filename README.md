@@ -1,10 +1,10 @@
 # TINY MARKET
 
-보안을 우선해 설계한 교육용 초소형 중고거래 플랫폼입니다. Django 서버 렌더링, 세션 인증, SQLite 개발 DB를 사용하며 과제 35페이지의 7개 대기능과 PDF 25~29페이지의 상세 시스템 기능을 구현했습니다. 공개 사용자 프로필, 소개글·비밀번호 변경 마이페이지, 내 상품 목록, 상품별 1:1 대화, 로그인 회원 전체 채팅, 신고 누적 자동조치와 관리자 복구를 제공합니다. 화면은 검정·흰색·중립 회색 기반의 모노크롬 디자인과 CSS Flexbox·Grid를 사용해 데스크톱부터 모바일까지 반응형으로 구성했습니다. 상품 색상은 거래 판단 정보이므로 업로드 사진은 원색을 유지합니다. 실제 결제, 실명 인증, 배송, 에스크로 또는 대금 정산은 제공하지 않습니다.
+보안을 우선해 설계한 교육용 초소형 중고거래 플랫폼입니다. Django 서버 렌더링, 세션 인증, SQLite 개발 DB를 사용하며 과제 35페이지의 7개 대기능과 PDF 25~29페이지의 상세 시스템 기능을 구현했습니다. 공개 사용자 프로필, 소개글·비밀번호 변경 마이페이지, 내 상품 목록, 상품별 1:1 대화, 로그인 회원 전체 채팅, 신고 누적 자동조치와 관리자 복구를 제공합니다. 화면은 검정·흰색·중립 회색 기반의 모노크롬 디자인과 CSS Flexbox·Grid를 사용해 데스크톱부터 모바일까지 반응형으로 구성했습니다. 이미지 첨부 컨트롤 영역만 다른 입력과 부드럽게 구분하기 위해 저채도 세이지를 제한적으로 사용하며, 상품 색상은 거래 판단 정보이므로 업로드 사진 자체는 원색을 유지합니다. 실제 결제, 실명 인증, 배송, 에스크로 또는 대금 정산은 제공하지 않습니다.
 
 > **DEMO POINT는 과제 검증용 가상 값입니다.** 현금·예금·전자지급수단이 아니며 충전, 출금, 환전, 현금화 또는 구매자 보호 기능이 없습니다. 실제 돈이나 금융정보를 입력하지 마세요.
 
-2026-07-13 사용자 QA에서 발견한 이미지 삭제 500 오류(SEC-031)는 Django `FileField.save_form_data()`로 삭제 sentinel을 정규화해 수정했습니다. 개발·발표 중 기술 오류 화면이 내부정보를 노출할 수 있었던 문제(SEC-032)는 `SafeExceptionMiddleware`, 일반 오류 템플릿과 템플릿 렌더링까지 실패할 때 사용하는 정적 fallback으로 수정했습니다. 수정 뒤 전체 168개 테스트, 94% coverage, Ruff·Bandit·pip-audit·deploy check를 모두 통과했습니다. 실제 브라우저에서도 이미지 삭제 저장·기존 파일 제거와 DEBUG 404 기술정보 비노출을 재확인했습니다. Public GitHub 공개·원격 CI, 실제 키보드/스크린리더 확인, 외부 배포, 최종 보고서 PDF와 LMS 제출은 여전히 제출자가 완료해야 합니다. 정식 버전 태그는 아직 만들지 않아 변경 이력은 `Unreleased`로 관리합니다.
+2026-07-13 사용자 QA에서 발견한 이미지 삭제 500 오류(SEC-031)는 Django `FileField.save_form_data()`로 삭제 sentinel을 정규화해 수정했습니다. 개발·발표 중 기술 오류 화면이 내부정보를 노출할 수 있었던 문제(SEC-032)는 `SafeExceptionMiddleware`, 일반 오류 템플릿과 템플릿 렌더링까지 실패할 때 사용하는 정적 fallback으로 수정했습니다. 이후 현재 이미지의 내부 저장명·직접 media 경로를 폼에 노출하지 않고 권한검사 URL로만 미리보기하는 전용 업로드 위젯을 적용했습니다. 현재 작업트리는 전체 170개 테스트, 94% coverage, Ruff·Bandit 정적 검사를 통과했고, 앞선 공급망·deploy 검사 결과도 문제 0건입니다. 실제 브라우저에서도 이미지 삭제 저장·기존 파일 제거와 DEBUG 404 기술정보 비노출을 재확인했습니다. Public GitHub 공개·원격 CI, 실제 키보드/스크린리더 확인, 외부 배포, 최종 보고서 PDF와 LMS 제출은 여전히 제출자가 완료해야 합니다. 정식 버전 태그는 아직 만들지 않아 변경 이력은 `Unreleased`로 관리합니다.
 
 ## 검증 결과
 
@@ -13,11 +13,13 @@
 | 검사 | 결과 |
 |---|---|
 | 2026-07-13 표적 회귀 | 프로필·마이페이지·전체 채팅·상품·자동 제재·DEBUG/운영 오류 응답 관련 **87개 통과** |
-| 변경 후 전체 `python manage.py test` | **168개 전부 통과 / 104.916초 / system check 문제 0건** |
-| 변경 후 Coverage | **4,190 statements / 248 miss / 94%** |
+| 이미지 첨부 UI 표적 회귀 | `ListingSecurityTests` **26개 전부 통과 / 18.104초** |
+| 변경 후 전체 `python manage.py test` | **170개 전부 통과 / 102.496초 / system check 문제 0건** |
+| 변경 후 Coverage | 계측 실행 **170개 전부 통과 / 103.560초 / 4,222 statements / 248 miss / 94%** |
 | 2026-07-12 과거 전체 스냅샷 | 120개 통과, 3,169 statements / 223 miss / 93%; SEC-031·032 분기는 당시 미포함 |
-| 변경 후 Ruff·Bandit·pip-audit·deploy check | **Ruff lint·format 통과, Bandit 이슈 0건, 알려진 의존성 취약점 0건, deploy check 문제 0건** |
+| 변경 후 Ruff·Bandit·pip-audit·deploy check | **Ruff lint 통과·37개 파일 format 일치, Bandit 이슈 0건, 알려진 의존성 취약점 0건, deploy check 문제 0건** |
 | DB·migration | `manage.py check` 문제 0건, `makemigrations --check --dry-run` 변경 없음, 신규 migration 적용 완료 |
+| CSS 정적 무결성 | 중괄호 **935개 열림 / 935개 닫힘** |
 | 실제 브라우저 재검증 | 이미지 비우기 저장 후 placeholder·DB 빈 값·기존 파일 삭제 확인, DEBUG 404 기술정보 비노출, 1440px·320px overflow 0 |
 
 GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표는 로컬 검증 결과이며, 원격 워크플로 상태는 실제 GitHub 저장소의 Actions/Security 화면에서 별도로 확인해야 합니다.
@@ -254,6 +256,7 @@ SOLD     -> ACTIVE
 - 기존 이미지 삭제의 `False` sentinel은 `FileField.save_form_data()`에 전달해 빈 파일값으로 정규화하고, boolean을 파일 객체로 저장하지 않음
 - 상품 soft delete·Admin purge 시 이미지 필드를 비우되 Report snapshot이 참조한 파일은 공개 route가 없는 private storage에 보존
 - 차단 상품 이미지는 공개되지 않으며 인가된 소유자·관리 권한만 guarded endpoint로 접근
+- 상품 수정 폼의 현재 이미지도 guarded endpoint만 사용하고 내부 저장명과 `MEDIA_URL`을 HTML에 노출하지 않음
 
 운영 reverse proxy/Nginx에서 `MEDIA_ROOT` 또는 `/_private-media/`를 정적 `alias`로 직접 서빙하면 guarded image endpoint와 신고 증거 비공개를 우회합니다. 두 경로는 절대 외부에 직접 노출하지 말고 모든 이미지 요청을 Django의 권한검사 이미지 view로만 전달하세요.
 
@@ -312,7 +315,7 @@ python manage.py check --deploy
 - 운영 WSGI 서버, TLS 종료, Redis, PostgreSQL, 백업·복구, 중앙 로그·모니터링은 포함되어 있지 않습니다. 다중 사용자 운영 전 SQLite는 PostgreSQL로, 프로세스별 `LocMemCache`는 원자적 공유 Redis로 전환해야 합니다.
 - 관리자 MFA·관리 네트워크 제한은 구현되지 않았습니다.
 - Django Admin 호환을 위해 `/admin/` CSP에 inline style/script 예외가 있습니다.
-- 이메일·전화번호·실명·GPS 확인, 비밀번호 재설정, 실제 결제·배송·에스크로는 없습니다.
+- 이메일·전화번호·실명 확인, 비밀번호 재설정, 실제 결제·배송·에스크로는 없습니다. 판매자·구매자의 정확한 실시간 GPS 상호 공유와 교통수단별 ETA도 위치 개인정보·동의·외부 지도 API 운영 범위가 필요해 현재는 의도적으로 구현하지 않았습니다.
 - 대화는 참여자 접근통제를 적용하지만 종단간 암호화가 아닙니다.
 - 전체 채팅은 WebSocket/SSE가 아니라 2초 간격의 제한된 polling이므로 최대 약 2초 지연이 있고, 사용자·인스턴스가 늘면 연결·쿼리 부하 시험과 WebSocket/채널 계층 전환 검토가 필요합니다.
 - 신고 임계치는 임시 가시성·계정 조치일 뿐 금지 상품의 진위를 자동 확정하지 않습니다. 신고 공모·오탐 이의제기, 사용자 복구 승인, 메시지·신고 증거 보존·파기 기간은 운영 정책으로 확정해야 합니다.

@@ -44,7 +44,8 @@ Codex가 현재 코드에서 직접 수행한 판정과 2026-07-13 변경 기능
 - PASS: `14 / 14`
 - PARTIAL: `0 / 14`
 - FAIL: `0 / 14`
-- 시스템 기능 완료: `PASS` — 전체 **168/168**, coverage **94%**, 정적·공급망·deploy 검사 통과; 외부 제출 검증만 별도 대기
+- 시스템 기능 완료: `PASS` — 전체 **170/170**, coverage **94%**, 정적·공급망·deploy 검사 통과; 외부 제출 검증만 별도 대기
 - 자동 증적: 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 **79개**, 53.066초, `OK` (2026-07-13)
-- 최종 통합 증적: 전체 **168개**, 104.916초, coverage **4,190 statements / 248 miss / 94%**, Ruff·Bandit·pip-audit·deploy 문제 0건
+- 이미지 첨부 UI 증적: `ListingSecurityTests` **26개**, 18.104초, 저채도 세이지 범위·MIME accept/help·guarded 현재 이미지 URL·내부 저장명 비노출 검증
+- 최종 통합 증적: 전체 **170개**, 102.496초, coverage 계측 **170개 / 103.560초 / 4,222 statements / 248 miss / 94%**, Ruff lint·37개 파일 format·Bandit·Django check 문제 0건, migration 변경 없음, CSS 중괄호 935/935
 - 확인자·일시: `Codex · 2026-07-13 17:43 +09:00`

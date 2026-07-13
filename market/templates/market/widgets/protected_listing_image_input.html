@@ -1,0 +1,19 @@
+{% if widget.is_initial %}
+  <div class="current-image-panel">
+    {% if widget.current_image_url %}
+      <img src="{{ widget.current_image_url }}" alt="현재 등록된 상품 이미지 미리보기">
+    {% endif %}
+    <div class="current-image-copy">
+      <span>{{ widget.initial_text }}</span>
+      <strong>보호된 이미지가 등록되어 있어요.</strong>
+      {% if not widget.required %}
+        <div class="current-image-clear">
+          <input type="checkbox" name="{{ widget.checkbox_name }}" id="{{ widget.checkbox_id }}"{% if widget.attrs.disabled %} disabled{% endif %}{% if widget.attrs.checked %} checked{% endif %}>
+          <label for="{{ widget.checkbox_id }}">{{ widget.clear_checkbox_label }}</label>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  <span class="upload-input-label">{{ widget.input_text }}</span>
+{% endif %}
+<input type="{{ widget.type }}" name="{{ widget.name }}"{% include "django/forms/widgets/attrs.html" %}>

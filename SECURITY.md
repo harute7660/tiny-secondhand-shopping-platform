@@ -154,6 +154,7 @@ HSTS preload는 코드 설정만으로 등록되지 않습니다. 실제 등록 
 - JPEG·PNG·WebP, 5MB 이하, 1,200만 픽셀 이하, 단일 프레임만 허용합니다.
 - 바이트 형식과 선언 Content-Type을 확인합니다.
 - EXIF 방향 보정 후 UUID 파일명의 JPEG로 재인코딩해 원본 이름과 메타데이터를 제거합니다.
+- 상품 수정 화면은 내부 저장명이나 `FieldFile.url`을 렌더링하지 않고, 소유자·공개 범위를 검사하는 `market:listing_image` route의 보호된 미리보기만 표시합니다.
 - 이미지 응답은 고정 `image/jpeg`, `nosniff`, `private, no-store`입니다.
 - 이미지 교체는 커밋 후 이전 파일을 삭제하고 DB 롤백 시 새 파일을 정리합니다.
 - 상품 신고 시 제목·설명·가격·분류·상태·이미지 저장명과 SHA-256을 snapshot으로 고정합니다.

@@ -4,7 +4,7 @@
 
 | ID | 요구사항 | 우선순위 | 인수 조건 | 구현/증적 | 테스트 | 상태 |
 |---|---|---:|---|---|---|---|
-| REQ-001 | 과제 PDF 35페이지의 최소 기능 전체 충족 | P0 | REQ-F001~F007 구현 및 검증 | PDF 35페이지·기능 코드 | 변경 기능 79개와 전체 168개 통과, coverage 94% | 완료 |
+| REQ-001 | 과제 PDF 35페이지의 최소 기능 전체 충족 | P0 | REQ-F001~F007 구현 및 검증 | PDF 35페이지·기능 코드 | 변경 기능 79개와 전체 170개 통과, coverage 94% | 완료 |
 | REQ-002 | 요구사항·설계·구현·테스트·유지보수 전 과정 보고 | P0 | 각 단계의 작업, 이유, 결과, 증적 포함 | `docs/`, README, 최종 PDF | DOC-T01 | 구현 |
 | REQ-003 | 발견한 보안약점과 수정 내역 기록 | P0 | SEC-ID별 원인·수정·재시험·잔여위험 포함 | `04_SECURITY_FINDINGS.md` | SEC-T01, SEC-031·032 Fixed, 표적·전체 회귀와 브라우저 재검증 완료 | 완료 |
 | REQ-004 | GitHub Public 저장소 제공 | P0 | 로그아웃 브라우저에서 열림 | 최종 URL·릴리스 SHA | REL-T01 | 설계 |
@@ -46,10 +46,10 @@
 
 | ID | 상세 요구 | 현재 구현·증적 | 현재 판정 | 완료하려면 |
 |---|---|---|:---:|---|
-| REQ-SD01 | 가입·로그인·아이디 중복 방지 | `/accounts/signup/`, `/accounts/login/`, `Lower(username)` UNIQUE, Django password hash와 가입·로그인 보안 회귀 | PASS | 전체 168개 회귀 통과 |
+| REQ-SD01 | 가입·로그인·아이디 중복 방지 | `/accounts/signup/`, `/accounts/login/`, `Lower(username)` UNIQUE, Django password hash와 가입·로그인 보안 회귀 | PASS | 전체 170개 회귀 통과 |
 | REQ-SD02 | 사용자 조회·프로필 | `/accounts/users/<username>/`, `User.bio`, 활성 일반회원의 username·bio만 primitive allowlist로 공개; email·권한·정지정보 비공개, XSS escape 회귀 | PASS | `PublicProfileSecurityTests` 통과 |
 | REQ-SD03 | 마이페이지 소개글·비밀번호 변경 | `/accounts/me/`, `/accounts/me/password/`; `ProfileForm`은 bio만 허용하고 현재 비밀번호·Django 강도 validator·256자 사전상한·사용자당 10회/시간·세션 hash 갱신 적용 | PASS | `MyPageSecurityTests` 통과 |
-| REQ-SD04 | 상품 등록 | `ListingForm`·`listing_create`, 제목·설명·가격·사진·판매자를 서버 결정하고 이미지 검증·quota/rate 적용 | PASS | `ListingSecurityTests` 통과 |
+| REQ-SD04 | 상품 등록 | `ListingForm`·`listing_create`, 제목·설명·가격·사진·판매자를 서버 결정하고 이미지 검증·quota/rate 적용. 첨부 영역은 저채도 세이지로 한정하고 현재 이미지는 guarded URL로만 표시하며 내부 저장명·`MEDIA_URL`을 숨김 | PASS | `ListingSecurityTests` 26개 통과(18.104초): MIME accept/help·보호 URL·저장명 비노출 포함 |
 | REQ-SD05 | 내가 등록한 상품 확인·관리 | `/listings/mine/`와 header UI, 세션 사용자의 삭제 제외 목록 20개 pagination, 소유자 수정·상태·soft delete; FileField `save_form_data()`로 SEC-031 수정 | PASS | 내 상품 격리와 이미지 유지·삭제·교체·모순·불량 업로드 회귀 통과 |
 | REQ-SD06 | 비회원 공개 상품 목록 | 공개 상태·활성 판매자 필터, 검색·카드·UUID 상세 링크, 차단·삭제 상품 제외 | PASS | `ListingSecurityTests` 및 과거 전체 회귀 |
 | REQ-SD07 | 상품 상세 | UUID 상세에 상품명·설명·가격·사진·상태·판매자 정보와 공개 프로필 링크 제공 | PASS | 상세 XSS·비공개 접근·프로필 링크 회귀 통과 |
@@ -61,11 +61,11 @@
 | REQ-SD13 | 27페이지 필수 화면 | 기본·가입·로그인·상품 목록/등록/상세·신고·1대1 대화·프로필·마이페이지·내 상품·전체 채팅이 header 또는 화면 link로 연결 | PASS | URL reverse·template link 및 관련 view 회귀 통과 |
 | REQ-SD14 | 28페이지 DB 구조와 기능상 추가 관계 | `User.bio`, `Listing`, `Report`, `Conversation`, `Message`, `GlobalChatMessage(sender FK, body 1000, created_at, time/id index)`와 제약·password hash·migrations | PASS | 모델·migration·DB 제약 및 기능 회귀 통과 |
 
-현재 집계는 **14 PASS / 0 PARTIAL / 0 FAIL**이며 PDF 25~29페이지의 상세 시스템 기능 범위는 `READY`다. 변경 기능 6개 테스트 클래스 79개가 53.066초에 통과했고, 최종 전체 168개도 104.916초에 통과했으며 coverage는 94%다. 수행 증적은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`에 기록한다.
+현재 집계는 **14 PASS / 0 PARTIAL / 0 FAIL**이며 PDF 25~29페이지의 상세 시스템 기능 범위는 `READY`다. 변경 기능 6개 테스트 클래스 79개가 53.066초에 통과했고, 이미지 첨부 UI 직접 분기 26개가 18.104초에 통과했다. 최종 전체 170개는 102.496초에 통과했고 coverage 계측 실행도 170개/103.560초, 4,222 statements / 248 miss / 94%로 통과했다. 수행 증적은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`에 기록한다.
 
 ## 2026-07-12 검증 스냅샷
 
-이 표는 당시 실제 실행 결과를 보존한 **과거 스냅샷**이다. 이후 SEC-031·032를 수정하고 변경 기능 79개 및 최종 전체 168개를 재검증했으므로 상세 시스템 기능 판정과 최신 품질 수치는 위 현재 표와 12번 수행 문서가 대체한다.
+이 표는 당시 실제 실행 결과를 보존한 **과거 스냅샷**이다. 이후 SEC-031·032를 수정하고 변경 기능 79개 및 최신 최종 전체 170개를 재검증했으므로 상세 시스템 기능 판정과 최신 품질 수치는 위 현재 표와 12번 수행 문서가 대체한다.
 
 | 검증 | 결과 | 요구사항 연결 |
 |---|---|---|
@@ -96,6 +96,7 @@
 | append-only 원장 | Admin 밖 ORM 경로의 과거 거래 변조 방지 | instance/QuerySet update·delete·upsert 거부, 불변성 테스트 |
 | hash lock·CI·CodeQL | 의존성 치환과 회귀의 조기 탐지 | `--require-hashes`, 최소 권한 CI, CodeQL security-extended, Dependabot |
 | 신고 증거와 private 이미지 보존 | 판매자가 신고 직후 원문·이미지를 바꾸거나 삭제·변조하는 증거 소실 방지 | read-only Report, snapshot·SHA-256, 증거명 index, `view_report` endpoint의 매 요청 hash·no-store·nosniff·actor log, private 보존 테스트 |
+| 상품 수정 폼의 이미지 경로 최소노출 | 기본 파일 위젯이 내부 저장명이나 직접 media 경로를 HTML에 노출해 저장 구조를 추측하게 하는 위험 방지 | 전용 위젯의 guarded image URL·일반화된 현재 이미지 문구, 내부 저장명·`MEDIA_URL` 부재 회귀 테스트 |
 | 운영 fail-closed 비밀 | 짧거나 예측 가능한 키와 설정 오타를 안전한 구성으로 오인하지 않도록 함 | 운영 key 50자·문자 다양성·금지 prefix, 엄격 boolean·HTTPS·host negative tests |
 | 공개 프로필·마이페이지 최소권한 | 프로필 공개로 email·권한·정지 사유가 새거나 자기소개 수정으로 privilege mass assignment가 발생하는 것을 방지 | 공개 primitive username·bio allowlist, 활성 일반회원만 조회, `ProfileForm.fields=("bio",)`, XSS·위조 필드 회귀 |
 | 비밀번호 변경 재인증·자원 상한 | 탈취 세션의 자격증명 변경과 과대 입력의 password hashing 자원 고갈 방지 | 현재 비밀번호, Django validator, 입력 256자 사전 거부, 사용자당 10회/시간, 성공 후 `update_session_auth_hash` 세션 회전 |
@@ -107,3 +108,4 @@
 - 별도 주문의 요청·수락·거절·취소·완료 상태 머신은 PDF 35페이지의 최소 기능이 아니며 현재 모델·URL에 존재하지 않는다.
 - 현재 구현은 판매자가 변경하는 상품 상태, 1:1 대화, DEMO POINT 송금과 감사 원장을 각각 제공한다. 이를 별도 주문의 구매 요청·승인·환불 워크플로로 표현하거나 테스트 완료로 주장하지 않는다.
 - 향후 실제 거래 중개 기능을 확장할 때 주문 상태 전이 허용목록, 동시 수락 방지, 취소·환불 원장과 상태 롤백을 별도 위협 모델 및 테스트 대상으로 추가한다.
+- 판매자·구매자의 정확한 실시간 GPS 상호 공유와 대중교통·자차 ETA는 PDF 최소 요구사항이 아니며 현재 구현하지 않았다. 향후에는 위치정보 동의·보존 최소화·참여자 인가·외부 지도 API 키와 호출 제한을 별도 위협 모델로 설계한 뒤, 정확한 상대 좌표 대신 약속 장소와 각자의 ETA 범위를 우선 검토한다.

@@ -3,9 +3,28 @@ import uuid
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import UploadedFile
+from django.urls import reverse
 
 from .models import MAX_TRANSFER_POINTS, Listing, Message, Report
 from .services import can_users_interact, process_listing_image
+
+
+class ProtectedListingImageInput(forms.ClearableFileInput):
+    template_name = "market/widgets/protected_listing_image_input.html"
+    clear_checkbox_label = "현재 이미지 삭제"
+    initial_text = "현재 이미지"
+    input_text = "새 이미지 선택"
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        instance = getattr(value, "instance", None)
+        listing_pk = getattr(instance, "pk", None)
+        if context["widget"]["is_initial"] and listing_pk:
+            context["widget"]["current_image_url"] = reverse(
+                "market:listing_image",
+                args=[listing_pk],
+            )
+        return context
 
 
 class ListingForm(forms.ModelForm):
@@ -28,6 +47,17 @@ class ListingForm(forms.ModelForm):
             "condition": "상품 상태",
             "region": "거래 지역",
             "image": "상품 이미지",
+        }
+        help_texts = {
+            "image": "JPEG, PNG, WebP · 5MB 이하 · 1,200만 픽셀 이하",
+        }
+        widgets = {
+            "image": ProtectedListingImageInput(
+                attrs={
+                    "accept": "image/jpeg,image/png,image/webp",
+                    "class": "image-upload-input",
+                }
+            ),
         }
 
     def clean_title(self):

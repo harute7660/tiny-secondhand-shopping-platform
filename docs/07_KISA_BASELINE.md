@@ -7,7 +7,7 @@
 - 구현단계 기준: 7개 영역, 49개 보안약점
 - Python 가이드 상세 설명 제외 3개: 메모리 버퍼 오버플로우, 해제된 자원 사용, 초기화되지 않은 변수 사용
 
-`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. 2026-07-13 발견한 SEC-031·032를 수정하고 표적 회귀에 이어 전체 168개, coverage 94%, 정적·공급망·deploy 검사를 통과했다.
+`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. 2026-07-13 발견한 SEC-031·032를 수정하고 이미지 첨부 UI의 경로 최소노출까지 보강한 뒤 전체 170개, coverage 94%, 정적·공급망·deploy 검사를 통과했다.
 
 ## 1. 입력데이터 검증 및 표현 - 17개
 
@@ -100,10 +100,12 @@
 | 증적 | 결과 | 주요 KISA 연결 |
 |---|---|---|
 | 관련 8개 테스트 클래스 | **87개 통과 / 53.390초** | 공개 allowlist·XSS, 현재 비밀번호·rate, 채팅 sender·CSRF·cursor·limit, 자동조치 경합·보호·복구, 이미지 sentinel, 오류 비노출·fallback |
+| 이미지 첨부 UI 직접 분기 | `ListingSecurityTests` **26개 통과 / 18.104초** | 저채도 세이지 범위, MIME accept/help, guarded 현재 이미지 URL, 내부 저장명·`MEDIA_URL` 비노출, 모바일 CSS |
 | Django system check | 문제 0건 | 설정·모델 기본 일관성 |
-| 변경 후 전체 suite | **168개 통과 / 104.916초 / system check 문제 0건** | SEC-031·032와 신규 기능을 포함한 최종 회귀 |
-| 변경 후 Coverage | **4,190 statements / 248 miss / 94%** | 현재 애플리케이션 전체 계측 |
-| 변경 후 정적·공급망·deploy | **Ruff lint·format 통과, Bandit 0건, pip-audit 0건, deploy check 0건** | 현재 코드와 가상환경 최종 품질 게이트 |
+| 변경 후 전체 suite | **170개 통과 / 102.496초 / system check 문제 0건** | SEC-031·032와 신규 기능을 포함한 최종 회귀 |
+| 변경 후 Coverage | 계측 실행 **170개 / 103.560초**, **4,222 statements / 248 miss / 94%** | 현재 애플리케이션 전체 계측 |
+| 변경 후 정적·공급망·deploy | **Ruff lint 통과·37개 파일 format 일치, Bandit 0건, pip-audit 0건, deploy check 0건** | 현재 코드와 가상환경 최종 품질 게이트 |
+| 구조·migration·CSS | **Django check 0건, migration 변경 없음, CSS 중괄호 935/935** | 설정·모델·스타일 정적 일관성 |
 
 ### 2026-07-12 SEC-031·032 발견 전 스냅샷
 
@@ -120,7 +122,7 @@
 | SHA-256 runtime lock | `requirements.lock` 생성·CI `--require-hashes` | 코드 다운로드 무결성 |
 | CI·CodeQL·Dependabot | 구성·commit SHA pin 로컬 검토 | 실제 GitHub 실행 결과는 최초 push 후 확인 |
 
-이 과거 결과는 보존용 실행 기록이다. SEC-031·032의 직접 분기는 2026-07-13 표적 회귀로, 전체 영향은 같은 날 168개 회귀·94% coverage·Ruff·Bandit·pip-audit·deploy check로 다시 확인했다.
+이 과거 결과는 보존용 실행 기록이다. SEC-031·032의 직접 분기는 2026-07-13 표적 회귀로, 이후 이미지 첨부 UI 직접 분기 26개와 전체 170개 회귀·94% coverage·Ruff·Bandit·pip-audit·deploy check로 다시 확인했다.
 
 판매자의 상품 판매중·예약중·판매완료 전이와 stale update 방어는 구현·검증했다. 그러나 별도 주문의 구매 요청·승인·거절·취소·환불 상태 머신은 PDF 최소 요구사항이 아니며 구현되지 않았으므로 “동일 주문 동시 수락”을 검증했다고 주장하지 않는다. 실제 시간·상태 증적은 상품 row lock·허용 전이와 DEMO POINT 조건부 차감·append-only 이중 원장·멱등성 테스트로 한정한다.
 

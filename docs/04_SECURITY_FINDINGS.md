@@ -44,6 +44,7 @@
 | SEC-030 | 동일 대상을 동시에 중복 신고할 경쟁조건 | Medium | Fixed | 조건부 UNIQUE·reporter 잠금 검증 |
 | SEC-031 | 상품 이미지 삭제 sentinel을 파일 객체로 오인해 500 발생 | Medium | Fixed | `FileField.save_form_data()` 정규화와 삭제·유지·교체·실패 회귀 통과 |
 | SEC-032 | 개발·발표 모드의 기술 오류 페이지 내부정보 노출 | Medium | Fixed | SafeExceptionMiddleware·standalone fallback의 DEBUG/운영 비노출 회귀 통과 |
+| SEC-033 | 상품 수정 위젯의 내부 이미지 저장명·무효 private media URL 노출 | Low | Fixed | 보호 route 렌더링·저장명/`MEDIA_URL` 비노출 회귀 통과 |
 
 ### SEC-001 - 신고 대상의 모델 검증 전 서버 바인딩 누락
 
@@ -292,7 +293,7 @@
 - 수정 전 보완: 저장 transaction이 rollback되고 commit 후 삭제 callback도 실행되지 않아 재현 시 기존 DB 이미지와 파일은 손실되지 않았다.
 - 변경·선택 이유: 잠근 최신 `Listing` 행에 text field는 허용목록으로 복사하되 이미지 값은 `Listing._meta.get_field("image").save_form_data(locked, cleaned_image)`에 전달한다. Django가 정의한 `False`→빈 파일명 정규화를 그대로 사용하므로 framework sentinel 의미를 중복 구현하지 않고, boolean을 FileField descriptor에 직접 대입하지 않는다. transaction·commit callback 기반의 기존 파일 생명주기는 유지했다.
 - 검증: `test_update_without_image_input_keeps_existing_image`, `test_update_clear_image_uses_filefield_normalization_and_removes_file`, `test_update_replaces_existing_image_and_removes_superseded_file`, `test_update_rejects_clear_and_upload_contradiction_without_changing_image`, `test_update_rejects_invalid_image_without_changing_existing_image`, 신고 snapshot 증거 보존 테스트를 포함한 표적 회귀에 통과했다. 실제 브라우저에서도 이미지가 있는 임시 상품에서 `비우기`를 선택해 저장한 뒤 상세 placeholder, DB 빈 값, 기존 파일 삭제, traceback 0건을 확인하고 QA 데이터를 제거했다.
-- 상태: **Fixed**. 2026-07-13 관련 87개 표적 테스트와 전체 168개가 통과했고 coverage는 94%였다. Ruff·Bandit·pip-audit·deploy check도 모두 통과했다.
+- 상태: **Fixed**. 해당 수정 직후인 2026-07-13 관련 87개 표적 테스트와 당시 전체 168개가 통과했고 coverage는 94%였다. 후속 첨부 widget 변경을 포함한 최신 통합 수치는 아래 최종 품질 게이트에 별도로 기록했다.
 
 ### SEC-032 - DEBUG 기술 오류 화면의 내부정보 노출
 
@@ -304,6 +305,16 @@
 - 독립 fallback: 공통 base·context processor·static lookup·URL reverse를 사용하는 오류 template조차 실패할 수 있으므로 `_standalone_error_response()`는 요청·예외 데이터 없이 코드 상수의 최소 HTML만 반환한다. 이 응답에도 SecurityHeadersMiddleware가 CSP, `nosniff`, `DENY`, `private, no-store`, `Pragma: no-cache`를 적용한다.
 - 검증: DEBUG True의 처리되지 않은 POST 예외에서 제출 비밀번호·예외명·traceback·절대경로·버전·설정이 응답과 로그에 없음을 확인했다. template render 실패 fallback, expected 400/403/404 status, unmatched URL pattern 비노출, resolved JSON 404 보존, DEBUG False 400/403/404/500/CSRF 비노출·보안 헤더, 정상 400/405/429 보존 테스트가 통과했다.
 - 상태: **Fixed**. `DebugSafeExceptionTests`·`ProductionErrorResponseTests`를 포함한 87개 표적 테스트가 53.390초에 통과했다. 운영에서는 심층 방어와 별개로 `DJANGO_DEBUG=false`를 계속 강제하며, 외부 reverse proxy의 자체 오류 페이지도 배포 시 점검한다.
+
+### SEC-033 - 상품 수정 위젯의 내부 저장명과 무효 private media URL 노출
+
+- 발견 단계/방법: 이미지 첨부 UI를 모노크롬 디자인과 대조하는 코드리뷰에서 기존 이미지가 있는 상품 수정 Form의 실제 렌더링을 확인했다.
+- KISA/CWE 연결: 시스템 정보 노출 최소화, 안전한 오류·인터페이스 설계, CWE-200.
+- 원인·위험: Django 기본 `ClearableFileInput`은 현재 `FieldFile`의 문자열 값과 `.url`을 링크로 렌더링한다. private storage를 쓰는 현재 구성에서는 인증된 소유자의 수정 화면에 내부 UUID 저장명이 나타나고 `/_private-media/...` 무효 링크가 만들어졌다. 공개 열람이나 직접 파일 다운로드는 아니어서 위험도는 Low지만, 저장소 구조를 불필요하게 노출하고 reverse proxy가 private media를 잘못 alias할 때 접근통제 우회로 이어질 수 있으며 사용자에게 깨진 링크를 제공했다.
+- 변경·선택 이유: 전용 `ProtectedListingImageInput`과 widget template을 추가했다. 위젯은 Listing 객체에서 UUID를 얻어 소유자·상품 공개 범위를 다시 검사하는 기존 `market:listing_image` route만 `reverse()`하고, 내부 저장명 대신 “보호된 이미지가 등록되어 있어요.”라는 일반 안내와 보호된 미리보기·삭제 checkbox를 표시한다. 새 파일 입력의 `accept`·도움말은 사용성 보조로만 두고 실제 형식·크기·픽셀·재인코딩 검증은 서버 sanitizer를 그대로 신뢰 경계로 유지했다.
+- 검증: `test_existing_image_widget_uses_guarded_url_without_storage_name`에서 보호된 `listing_image` URL과 삭제 label을 확인하고 내부 저장명 및 `settings.MEDIA_URL` 부재를 검증했다. `test_image_upload_has_scoped_accessible_presentation`은 파일 입력의 허용 MIME·도움말·첨부 영역 scope를 확인했고, `ListingSecurityTests` 26개와 전체 회귀가 통과했다.
+- 잔여 위험: 보호 route도 권한검사와 `private, no-store`를 계속 유지해야 하며 reverse proxy는 `MEDIA_ROOT`와 `/_private-media/`를 직접 서빙하면 안 된다. 브라우저 `accept`는 보안 검증이 아니므로 서버 sanitizer를 제거하거나 완화하지 않는다.
+- 상태: **Fixed**. 내부 저장명·직접 private media URL을 사용자 HTML에 렌더링하지 않고 보호된 application route만 사용한다.
 
 ## 2026-07-13 신규 기능의 위협 검토와 예방 통제
 
@@ -326,8 +337,8 @@
 
 ### 2026-07-13 최종 통합 품질 게이트
 
-- Django 전체 tests: **168개 통과 / 104.916초 / system check 문제 0건**
-- Coverage: **4,190 statements / 248 miss / 94%**
+- Django 비계측 전체 tests: **170개 통과 / 102.496초 / system check 문제 0건**
+- Coverage 계측 실행: **170개 통과 / 103.560초 / 4,222 statements / 248 miss / 94%**
 - Ruff: lint 오류 0건, 37개 파일 format 일치
 - Bandit: 이슈 0건 (`community` 포함)
 - pip-audit: 알려진 취약점 0건

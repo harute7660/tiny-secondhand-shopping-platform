@@ -92,6 +92,36 @@ class MarketTestCase(TestCase):
 
 
 class ListingSecurityTests(MarketTestCase):
+    def test_image_upload_has_scoped_accessible_presentation(self):
+        self.client.force_login(self.bob)
+
+        response = self.client.get(reverse("market:listing_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "upload-field", count=1)
+        self.assertContains(
+            response,
+            'accept="image/jpeg,image/png,image/webp"',
+            html=False,
+        )
+        self.assertContains(response, "JPEG, PNG, WebP · 5MB 이하 · 1,200만 픽셀 이하")
+
+    def test_existing_image_widget_uses_guarded_url_without_storage_name(self):
+        self.listing.image.name = "listings/private/internal-storage-name.jpg"
+        self.listing.save(update_fields=("image", "updated_at"))
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse("market:listing_update", args=[self.listing.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            reverse("market:listing_image", args=[self.listing.pk]),
+        )
+        self.assertContains(response, "현재 이미지 삭제")
+        self.assertNotContains(response, "internal-storage-name.jpg")
+        self.assertNotContains(response, settings.MEDIA_URL)
+
     def test_create_uses_session_seller_and_ignores_privileged_fields(self):
         self.client.force_login(self.bob)
         response = self.client.post(
