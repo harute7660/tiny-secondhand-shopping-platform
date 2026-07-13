@@ -154,5 +154,5 @@
 - [~] REL-T05 공백 없는 지정 파일명과 공식 기한 2026-07-24 확인
 - [~] REL-T06 최초 GitHub Actions CI·CodeQL·Dependabot 실행 결과와 대상 commit SHA 기록
 - [~] REL-T07 운영 reverse proxy가 `MEDIA_ROOT`·`/_private-media/`를 직접 alias로 노출하지 않고 모든 이미지 요청이 Django 권한검사 view를 통과하는지 배포 설정 검증
-- [x] REL-T08 README와 `docs/00~10` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
+- [x] REL-T08 README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
 - [ ] REL-T09 SEC-031·032 수정, 신규 오류 회귀, 전체 테스트·coverage·정적·의존성 검사 재실행 후 Open 상태 해소

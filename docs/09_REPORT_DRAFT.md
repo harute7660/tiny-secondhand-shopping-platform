@@ -92,7 +92,7 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 
 | ID | 요구사항 | 반영 위치 | 최종 확인 |
 |---|---|---|---|
-| REQ-D001 | 요구사항 분석부터 유지보수까지 전 과정 보고 | 본 문서와 `docs/00~10` | `[최종 확인 필요]` |
+| REQ-D001 | 요구사항 분석부터 유지보수까지 전 과정 보고 | 본 문서와 `docs/00~12` | `[최종 확인 필요]` |
 | REQ-D002 | 발견한 보안약점과 변경 내용 설명 | 본 문서 9장, `docs/04_SECURITY_FINDINGS.md` | SEC-001~032 동기화; SEC-031·032 Open |
 | REQ-D003 | GitHub Public 저장소 | 표지·15장 | `[공개 URL 입력 및 로그아웃 확인 필요]` |
 | REQ-D004 | README 환경 설정·실행 방법 | `README.md` | `[클린 환경 재현 결과 입력 필요]` |
@@ -186,7 +186,7 @@ flowchart LR
 | `config` | 환경설정, URL, 오류 응답, 프록시 신뢰, 보안 헤더 | `settings.py`, `middleware.py`, `views.py` |
 | `templates/static` | 서버 렌더링 UI, 접근성·반응형 CSS | `templates/`, `static/css/` |
 | `.github` | CI, CodeQL, Dependabot | workflow와 설정 파일 |
-| `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~10` |
+| `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~12` |
 
 UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 초기 감청색 설계 뒤 사용자 요청으로 현재 UI chrome을 검정·흰색·중립 회색으로 전환했다. 검정 hero·primary button, 흰색 header·card·form, 중립 border·shadow로 정보 위계를 단순화했다. 단, 상품 색상은 구매 판단 정보이므로 업로드 사진은 원색을 유지하고 오류·성공 상태색은 안전 의미 전달 범위에서 유지한다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
 
@@ -638,7 +638,7 @@ README에는 Python 3.12 가상환경 생성, hash-locked 개발 의존성 설�
 - `[최종 확인 필요]` migration과 서버 시작 성공
 - `[최종 확인 필요]` 전체 테스트와 보안 검사 성공
 - `[최종 확인 필요]` 비밀값·DB·업로드 없이 clone 가능
-- `[완료]` README와 `docs/00~10` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현·의존성 파일명·조치 권한 표현 점검
+- `[완료]` README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현·의존성 파일명·조치 권한 표현 점검
 
 남은 작업에는 외부·개인 증적인 반·이름·전화번호, Public GitHub URL·SHA·tag, 원격 Actions/CodeQL, 최종 PDF 캡처·렌더링뿐 아니라 로컬 SEC-031·032 수정, 신규 회귀와 전체 자동검사 재실행도 포함된다. 과거 로컬 자동검사 수치는 실제 스냅샷으로 보존하되 최종 수치로 재사용하지 않는다.
 
@@ -731,6 +731,8 @@ python manage.py collectstatic --noinput
 | `docs/08_COMPETITOR_ANALYSIS.md` | 당근·번개장터 조사와 적용 결정 |
 | `docs/09_REPORT_DRAFT.md` | 최종 제출 보고서 통합 초안 |
 | `docs/10_USER_ACCEPTANCE_CHECKLIST.md` | PDF 원문 기반 사용자 수동 인수·보안·제출 점검 |
+| `docs/11_CORE_SUBMISSION_CHECKLIST.md` | 제출 필수 18개 핵심 체크리스트 |
+| `docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md` | 현재 코드에서 Codex가 직접 수행한 PASS·FAIL·BLOCKED 판정 |
 | `.github/workflows/*.yml` | CI·CodeQL 지속 검증 |
 | `requirements*.in/lock` | 직접 의존성과 hash-locked 설치 |
 

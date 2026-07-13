@@ -42,6 +42,8 @@ GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표�
 
 제출 직전 꼭 확인할 18개 항목만 보려면 [`docs/11_CORE_SUBMISSION_CHECKLIST.md`](docs/11_CORE_SUBMISSION_CHECKLIST.md)를 사용하세요.
 
+2026-07-13 현재 코드에서 Codex가 직접 수행한 판정은 [`docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`](docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md)에 있습니다. 현재 결과는 11 PASS, 5 FAIL, 2 BLOCKED로 제출 준비 완료 상태가 아닙니다.
+
 ## 기술 구성
 
 - Python 3.12
