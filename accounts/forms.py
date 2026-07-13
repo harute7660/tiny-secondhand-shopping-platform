@@ -74,3 +74,27 @@ class LoginForm(AuthenticationForm):
                 GENERIC_LOGIN_ERROR,
                 code="invalid_login",
             )
+
+
+class ProfileForm(forms.ModelForm):
+    """Allow a member to update only the public biography field."""
+
+    bio = forms.CharField(
+        label="소개글",
+        required=False,
+        max_length=500,
+        strip=True,
+        widget=forms.Textarea(
+            attrs={
+                "autocomplete": "off",
+                "maxlength": "500",
+                "rows": 6,
+            },
+        ),
+        help_text="공개 프로필에 표시됩니다. 최대 500자까지 입력할 수 있습니다.",
+    )
+
+    class Meta:
+        model = User
+        # Explicit allowlist prevents privilege and account-state assignment.
+        fields = ("bio",)

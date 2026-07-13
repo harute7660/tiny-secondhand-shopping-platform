@@ -244,7 +244,7 @@
 - 원인: transaction 안에서 최신 행을 다시 잠그기 위해 Form instance가 아닌 locked instance로 값을 복사하면서 Django `FileField.save_form_data()`의 `False`→빈 파일명 변환을 우회했다.
 - 영향: DB transaction은 rollback되어 기존 이미지 손실은 없었지만 수정 기능의 가용성이 깨지고 DEBUG 환경에서 CWE-209 정보노출로 연결됐다.
 - 확인한 보완: production+DEBUG는 시작을 거부하며, DEBUG false에서는 커스텀 500·404와 CSRF 403에 진단 문자열이 없었다.
-- 현재 상태: SEC-031·032를 Open으로 등록했다. 사용자는 이번 요청에서 확인과 체크리스트 작성을 요구했으므로 코드 수정은 다음 명시적 수정 지시 후 회귀 테스트와 함께 진행한다.
+- 당시 상태: SEC-031·032를 Open으로 등록했다. 이 시점에는 사용자가 확인과 체크리스트 작성을 요구했으므로 코드 수정은 다음 명시적 수정 지시 후 회귀 테스트와 함께 진행하기로 했다.
 - 추가 품질 공백: 일부 400·429는 plain text, 405는 Django 기본 응답이며, 500 템플릿은 공통 base·세션·URL reverse에 의존한다.
 
 ## 2026-07-13 - 과제 PDF 원문 기반 사용자 인수 체크리스트
@@ -254,7 +254,7 @@
 - 이유: 개발자 자동 테스트 통과만으로는 제출자가 실제 화면, Public GitHub, README 재현, 보고서 PDF·파일명·LMS 업로드를 확인했다고 증명할 수 없기 때문이다.
 - 반영 범위: 7개 필수 기능, 24페이지 시스템 설계, 개발 전 과정 보고서, 발견 보안약점 전후, AI 활용, Public GitHub·README, 지정 파일명·LMS 제출을 `10_USER_ACCEPTANCE_CHECKLIST.md`에 연결했다.
 - 기한 판단: PDF 36페이지의 7월 23일보다 사용자 정정 공지의 **2026-07-24 23:59:59**를 우선했다.
-- 결과: 자동검사용 `06_TEST_CHECKLIST.md`와 제출자 수동검사용 `10_USER_ACCEPTANCE_CHECKLIST.md`를 분리했고, SEC-031·032와 Public GitHub·모바일·최종 PDF를 현재 blocker로 표시했다.
+- 당시 결과: 자동검사용 `06_TEST_CHECKLIST.md`와 제출자 수동검사용 `10_USER_ACCEPTANCE_CHECKLIST.md`를 분리했고, SEC-031·032와 Public GitHub·모바일·최종 PDF를 blocker로 표시했다.
 - 다음 작업: blocker 수정 후 제출자가 직접 체크하고 계정·commit SHA·일시·스크린샷·원격 URL 증적을 기록한다.
 
 ## 2026-07-13 - 블랙·화이트 UI 전환과 필수 체크리스트 축약
@@ -267,7 +267,7 @@
 - 브라우저 증적: 1440×1000 홈에서 4열 Grid·가로 overflow 0·검정 primary button·검정 hero를 확인했다. 320×800에서 1열 Grid·가로 overflow 0·sticky header·44px primary button을 확인했다. 로그인·안전 가이드도 1440px에서 overflow 0, 외부 asset 0을 확인했다. 브라우저 키보드 focus 이동은 자동 제어 세션에서 확인하지 못해 최종 수동 항목으로 남겼다.
 - 자동 증적: 현재 작업 트리에서 Django 120개 통과, Coverage 93%, system check·migration 일치, Ruff·format·Bandit·pip-audit 통과, production deploy check 문제 0건, CSS 중괄호 879/879, template inline/external asset 0건을 확인했다.
 - 체크리스트 축약: 상세 10번 문서는 유지하고 PDF 필수 요구만 A/B/E 18개로 줄인 `11_CORE_SUBMISSION_CHECKLIST.md`를 추가했다. 수행본은 성공하지 않은 항목을 FAIL/BLOCKED로 기록한다.
-- 잔여 위험: SEC-031 이미지 삭제 500, SEC-032 오류 비노출 자동 회귀, Public GitHub, 최종 PDF·LMS, 실제 키보드 focus가 남아 있다. 플랫폼명은 사용자 선택 전 변경하지 않는다.
+- 당시 잔여 위험: SEC-031 이미지 삭제 500, SEC-032 오류 비노출 자동 회귀, Public GitHub, 최종 PDF·LMS, 실제 키보드 focus가 남아 있었다. 플랫폼명은 사용자 선택 전 변경하지 않는다.
 
 ## 2026-07-13 - PDF 25~29페이지 기준 시스템 기능 체크리스트 정정
 
@@ -280,6 +280,29 @@
 - 직접 검증: 가입·로그인·상품·1대1 대화·신고 관련 5개 테스트 클래스 67개가 46.119초에 통과했다. route/model introspection과 정적 대조로 존재하지 않는 기능을 확인했다. 결과는 6 PASS, 3 PARTIAL, 5 FAIL이다.
 - 보안 영향: 전체 채팅과 자동 제재를 급히 추가하면 메시지 권한·XSS·rate limit·보존정책과 신고 조작에 의한 서비스거부 위험이 생긴다. 이번 단계에서는 미구현을 숨기지 않고 요구·위협·테스트를 먼저 확정했으며 기능 코드는 변경하지 않았다.
 - 다음 작업: 프로필·마이페이지, 실시간 전체 채팅, 누적 신고 정책, 내 상품 접근성·SEC-031 순으로 설계·구현하고 14개 전부를 다시 판정한다.
+
+## 2026-07-13 - 상세 기능 공백 구현과 SEC-031·032 수정
+
+- 단계: 요구사항 충족 / 시스템 설계 / 구현 / 보안 수정 / 표적 회귀 / 유지보수 계획
+- 수행 작업: 공개 프로필, 소개글·비밀번호 변경 마이페이지, 내 상품 목록, 로그인 회원 전체 채팅, 서로 다른 신고자 3명의 OPEN 신고를 기준으로 하는 상품 임시 차단·일반 사용자 임시 정지를 추가했다. 이미지 삭제 500과 기술 오류 화면 정보노출도 함께 수정했다.
+- 이유: PDF 25~29페이지의 기능 존재 여부를 충족하는 동시에 새 프로필 입력, 실시간 UX, 자동 제재가 만드는 Mass Assignment·XSS·요청 고갈·신고 공모 서비스거부 위험을 기능과 같은 변경 단위에서 통제하기 위해서다.
+- 프로필·마이페이지 설계: 공개 화면에는 `User` 객체 전체가 아니라 `username`·`bio` 원시값만 전달한다. 소개글은 최대 500자이며 `ProfileForm.Meta.fields = ("bio",)`와 명시적 `update_fields`로 권한·정지·이메일 필드의 Mass Assignment를 막는다. 비밀번호 변경은 현재 비밀번호를 요구하는 Django `PasswordChangeForm`, 기존 validators, 256자 사전 길이 제한, 사용자별 시간당 10회 제한을 사용하고 성공 후 `update_session_auth_hash()`로 현재 세션을 유지·회전한다.
+- 전체 채팅 아키텍처: WebSocket/SSE 대신 인증된 2초 단기 HTTP polling을 선택했다. 현재 동기식 Django·SQLite·채널 계층 부재 환경에서 장기 연결보다 인증·CSRF·rate limit·cache-control·테스트가 단순하기 때문이다. 서명된 증분 cursor, 응답 최대 100건, 사용자별 분당 조회 40회·송신 10회, 본문 1,000자, hidden tab 중단·오류 backoff·동시 poll 금지·DOM 200개 상한을 적용했다. JavaScript는 `innerHTML` 없이 `textContent`로 노드를 만들고 차단 관계 양방향 메시지와 정지 발신자를 제외한다. 대가는 최대 약 2초 지연과 사용자 증가 시 polling 부하다.
+- 자동 제재 설계: 같은 대상에 대한 서로 다른 신고자 3명의 `OPEN` 신고만 센다. 대상 행을 transaction 안에서 잠그고, 판매자·대상 자신의 신고는 집계에서 제외하며 staff·superuser는 자동 정지하지 않는다. 상품은 영구 삭제하지 않고 임시 `BLOCKED`, 일반 사용자는 `is_suspended=True`와 `is_active=False`로 처리해 즉시 가시성·세션을 제한한다. 결과는 감사로그에 남기고 권한 있는 관리자가 자동 차단 상품을 복구하며 관련 OPEN 신고를 `DISMISSED`로 전환할 수 있다. 오탐·공모 위험 때문에 영구 삭제는 관리자 검토 없이 자동화하지 않았다.
+- SEC-031 변경: `ClearableFileInput`의 삭제 sentinel `False`를 잠긴 모델에 `setattr()`하지 않고 Django `FileField.save_form_data()`에 전달해 빈 파일값으로 정규화했다. 삭제·유지·교체·삭제와 업로드 동시 선택·잘못된 업로드·신고 증거 보존 분기를 회귀 대상으로 삼았다.
+- SEC-032 변경: `SafeExceptionMiddleware`가 DEBUG 여부와 관계없이 처리되지 않은 예외를 비진단 오류 응답으로 바꾸며, 예외·요청 본문·경로를 응답이나 로그에 넣지 않는다. DEBUG 미일치 URL의 pattern 목록도 일반 404로 바꾼다. 오류 템플릿까지 실패할 때는 template engine·context processor·정적 lookup·URL reverse에 의존하지 않는 독립 HTML fallback을 반환한다. 운영 `DEBUG=false` fail-closed 정책은 계속 유지한다.
+- 표적 테스트 증적: `PublicProfileSecurityTests`, `MyPageSecurityTests`, `GlobalChatSecurityTests`, `GlobalChatAdminTests`, `ListingSecurityTests`, `ModerationSecurityTests`, `DebugSafeExceptionTests`, `ProductionErrorResponseTests` 총 **87개가 53.390초에 통과**했고 system check 문제는 0건이었다. 이는 SEC-031·032와 신규 기능의 직접 분기 증적이다.
+- 유지보수·잔여 위험: 다중 사용자 운영 전에 SQLite를 PostgreSQL로, 프로세스별 `LocMemCache`를 원자적 공유 Redis로 바꾸고 polling 부하·DB index·rate-limit 장애 정책을 부하 시험한다. 신고 공모·오탐에 대한 이의제기와 사용자 정지 복구 승인, 전체 채팅·신고 증거의 보존·파기 기간을 정책으로 확정해야 한다. Public GitHub·원격 CI, 외부 배포, 실제 키보드/스크린리더, 최종 PDF와 LMS 제출은 아직 미완료다.
+
+## 2026-07-13 - 최종 통합 회귀와 실제 브라우저 재검증
+
+- 단계: 통합 테스트 / 보안 검증 / 브라우저 인수 / 문서 동기화
+- 수행 작업: 전체 168개 테스트와 coverage를 다시 실행하고 Ruff lint·format, Bandit, pip-audit, Django check·migration drift·운영 deploy check를 통과시켰다. CI Bandit 범위에도 신규 `community` 앱을 추가했다.
+- 이유: 79개·87개 표적 회귀는 변경 분기를 빠르게 확인하지만 다른 앱과의 회귀나 신규 앱의 정적 분석 누락을 증명하지 못한다. 최종 보고서에는 과거·표적·현재 전체 수치를 분리해 과장 없이 기록할 필요가 있다.
+- 자동 결과: `manage.py test` **168개 통과 / 104.916초**, coverage **4,190 statements / 248 miss / 94%**, Ruff lint·format 통과, Bandit 이슈 0건, pip-audit 알려진 취약점 0건, deploy check 문제 0건, migration drift 없음.
+- 브라우저 결과: SEC-031 임시 QA 상품에서 기존 이미지를 `비우기`로 저장해 상세 placeholder·DB 빈 값·기존 파일 삭제·오류 0건을 확인했다. DEBUG 미등록 URL은 일반 404만 표시하고 URL pattern·Django 버전·traceback을 노출하지 않았다. 1440px 마이페이지와 320px 마이페이지·전체 채팅·내 상품에서 문서 가로 overflow 0을 확인했고 전체 채팅 DOM은 `textContent`, 1,000자 상한, `aria-live`, 46px 전송 버튼을 유지했다.
+- 정리: 브라우저용 임시 사용자·상품·파일을 삭제했다. 개발 DB에는 `accounts.0005`, `community.0001` migration을 적용했다.
+- 남은 외부 작업: Public GitHub 공개와 원격 Actions/CodeQL, clean clone 재현, 외부 reverse proxy, 실제 키보드·스크린리더, 개인정보 입력과 최종 PDF 렌더링·LMS 제출은 제출자가 수행한다.
 
 ## 후속 기록 템플릿
 

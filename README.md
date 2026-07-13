@@ -1,26 +1,24 @@
 # TINY MARKET
 
-보안을 우선해 설계한 교육용 초소형 중고거래 플랫폼입니다. Django 서버 렌더링, 세션 인증, SQLite 개발 DB로 과제 35페이지의 7개 대기능을 구현 대상으로 삼았습니다. 다만 2026-07-13에 PDF 25~29페이지의 상세 시스템 기능을 다시 대조한 결과, 사용자 프로필·마이페이지·실시간 전체 채팅·신고 횟수 자동조치가 아직 빠져 있어 기능 완료 상태가 아닙니다. 화면은 검정·흰색·중립 회색 기반의 모노크롬 디자인과 CSS Flexbox·Grid를 사용해 데스크톱부터 모바일까지 반응형으로 구성했습니다. 상품 색상은 거래 판단 정보이므로 업로드 사진은 원색을 유지합니다. 실제 결제, 실명 인증, 배송, 에스크로 또는 대금 정산은 제공하지 않습니다.
+보안을 우선해 설계한 교육용 초소형 중고거래 플랫폼입니다. Django 서버 렌더링, 세션 인증, SQLite 개발 DB를 사용하며 과제 35페이지의 7개 대기능과 PDF 25~29페이지의 상세 시스템 기능을 구현했습니다. 공개 사용자 프로필, 소개글·비밀번호 변경 마이페이지, 내 상품 목록, 상품별 1:1 대화, 로그인 회원 전체 채팅, 신고 누적 자동조치와 관리자 복구를 제공합니다. 화면은 검정·흰색·중립 회색 기반의 모노크롬 디자인과 CSS Flexbox·Grid를 사용해 데스크톱부터 모바일까지 반응형으로 구성했습니다. 상품 색상은 거래 판단 정보이므로 업로드 사진은 원색을 유지합니다. 실제 결제, 실명 인증, 배송, 에스크로 또는 대금 정산은 제공하지 않습니다.
 
 > **DEMO POINT는 과제 검증용 가상 값입니다.** 현금·예금·전자지급수단이 아니며 충전, 출금, 환전, 현금화 또는 구매자 보호 기능이 없습니다. 실제 돈이나 금융정보를 입력하지 마세요.
 
-구현된 기능도 있지만, 2026-07-13 사용자 QA에서 이미지 삭제 500 오류(SEC-031)와 개발용 DEBUG 기술 화면의 정보노출 위험(SEC-032)을 추가 발견했습니다. 같은 날 PDF 25~29페이지 기능 감사에서 상세 필수 기능 누락도 확인했습니다. 보안 결함 수정, 누락 기능 구현·회귀검사와 Public GitHub 검증 전까지 제출 완료 상태로 간주하지 않습니다. 정식 버전 태그는 아직 만들지 않아 변경 이력은 `Unreleased`로 관리합니다.
+2026-07-13 사용자 QA에서 발견한 이미지 삭제 500 오류(SEC-031)는 Django `FileField.save_form_data()`로 삭제 sentinel을 정규화해 수정했습니다. 개발·발표 중 기술 오류 화면이 내부정보를 노출할 수 있었던 문제(SEC-032)는 `SafeExceptionMiddleware`, 일반 오류 템플릿과 템플릿 렌더링까지 실패할 때 사용하는 정적 fallback으로 수정했습니다. 수정 뒤 전체 168개 테스트, 94% coverage, Ruff·Bandit·pip-audit·deploy check를 모두 통과했습니다. 실제 브라우저에서도 이미지 삭제 저장·기존 파일 제거와 DEBUG 404 기술정보 비노출을 재확인했습니다. Public GitHub 공개·원격 CI, 실제 키보드/스크린리더 확인, 외부 배포, 최종 보고서 PDF와 LMS 제출은 여전히 제출자가 완료해야 합니다. 정식 버전 태그는 아직 만들지 않아 변경 이력은 `Unreleased`로 관리합니다.
 
 ## 검증 결과
 
-다음은 **SEC-031·032 발견 전인 2026-07-12 자동검사 스냅샷**입니다. 당시 검사는 통과했지만 기존 이미지 삭제와 운영 오류 본문 비노출 분기가 빠져 있었으므로, 두 항목 수정 후 전체 검사를 다시 실행해야 합니다.
+다음은 현재 작업트리의 최종 로컬 품질 게이트와 수정 분기 표적 회귀 증적입니다. 2026-07-12 수치는 변경 전 비교용 스냅샷으로만 보존합니다.
 
 | 검사 | 결과 |
 |---|---|
-| `python manage.py test` | **120개 통과** — 이미지 삭제·오류 본문 비노출 분기 미포함 |
-| Coverage | **93%** (3,169 statements / 223 miss) |
-| `python manage.py check` | 문제 0건 |
-| `python manage.py makemigrations --check --dry-run` | 변경 없음 |
-| `ruff check .` / `ruff format --check .` | 오류 0건 |
-| Bandit | 이슈 0건 |
-| `pip-audit -r requirements.lock --disable-pip` | 알려진 취약점 0건 |
-| 운영 환경 `check --deploy` | 문제 0건 |
-| `pip install --require-hashes -r requirements-dev.lock --target <빈 디렉터리>` | 해시 검증 설치 성공 |
+| 2026-07-13 표적 회귀 | 프로필·마이페이지·전체 채팅·상품·자동 제재·DEBUG/운영 오류 응답 관련 **87개 통과** |
+| 변경 후 전체 `python manage.py test` | **168개 전부 통과 / 104.916초 / system check 문제 0건** |
+| 변경 후 Coverage | **4,190 statements / 248 miss / 94%** |
+| 2026-07-12 과거 전체 스냅샷 | 120개 통과, 3,169 statements / 223 miss / 93%; SEC-031·032 분기는 당시 미포함 |
+| 변경 후 Ruff·Bandit·pip-audit·deploy check | **Ruff lint·format 통과, Bandit 이슈 0건, 알려진 의존성 취약점 0건, deploy check 문제 0건** |
+| DB·migration | `manage.py check` 문제 0건, `makemigrations --check --dry-run` 변경 없음, 신규 migration 적용 완료 |
+| 실제 브라우저 재검증 | 이미지 비우기 저장 후 placeholder·DB 빈 값·기존 파일 삭제 확인, DEBUG 404 기술정보 비노출, 1440px·320px overflow 0 |
 
 GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표는 로컬 검증 결과이며, 원격 워크플로 상태는 실제 GitHub 저장소의 Actions/Security 화면에서 별도로 확인해야 합니다.
 
@@ -28,10 +26,10 @@ GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표�
 
 | 필수 요구사항 | 구현 | 주요 보안 통제 |
 |---|---|---|
-| 사용자 가입 | 가입·로그인·POST 로그아웃 구현; 프로필·마이페이지 미구현 | Django 비밀번호 해시, 최소 12자, 권한 필드 미노출, 로그인 제한 |
-| 상품 등록·조회 | 등록·상세·수정·상태 전이·soft delete·이미지·찜; 내 상품 UI와 이미지 삭제 수정 필요 | 판매자 서버 결정, 소유자 권한, 가격 DB 제약, 이미지 재인코딩 |
-| 사용자 소통 | 상품별 1:1 대화 구현; 실시간 전체 채팅 미구현 | 참여자 조회, 서버 결정 발신자, 차단 시 전송 금지, 캐시 기반 제한 |
-| 악성 사용자·상품 차단 | 신고·수동 관리자 조치 구현; 신고 횟수 자동조치 미구현 | 임의 사용자 ID 신고 금지, URL 문맥에서 대상 결정, 관리자 권한 분리 |
+| 사용자 가입 | 가입·로그인·POST 로그아웃, 공개 프로필, 소개글·비밀번호 변경 마이페이지 | 공개 필드 `username`·`bio` 허용목록, 현재 비밀번호 확인, Django validators, 입력·시도 제한, 세션 hash 갱신 |
+| 상품 등록·조회 | 등록·상세·내 상품 목록·수정·상태 전이·soft delete·이미지·찜 | 판매자 서버 결정, 소유자 권한, 가격 DB 제약, 이미지 재인코딩, 삭제 sentinel 안전 정규화 |
+| 사용자 소통 | 상품별 1:1 대화와 로그인 회원 전체 채팅 | 참여자 조회, 서버 결정 발신자, 차단 관계 숨김, 1,000자·송신/조회 제한, 서명 cursor, 2초 단기 polling |
+| 악성 사용자·상품 차단 | 신고·관리자 조치, 서로 다른 3명의 OPEN 신고 시 상품 임시 차단·일반 사용자 임시 정지 | 중복 신고 DB 제약, 행 잠금·원자적 집계, 판매자 자기신고 제외, staff/superuser 보호, 감사로그·관리자 복구 |
 | 사용자 간 송금 | DEMO POINT 지갑·송금·거래 내역·이중 원장 | 조건부 차감, 원자적 처리, 멱등키, 음수 방지, 원장 ORM 불변성 |
 | 상품 검색 | 키워드·카테고리·상태·지역·정렬·페이지네이션 | ORM, 길이 제한, 정렬 허용목록, 비공개 상품 제외 |
 | 관리자 관리 | Django Admin에서 플랫폼 요소 검토·조치 | 운영 기본 비활성, 세부 권한 재검사, 보호 계정 제외, 원장 읽기 전용 |
@@ -42,7 +40,7 @@ GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표�
 
 PDF 25~29페이지의 시스템 설계 기능 14개만 점검하려면 [`docs/11_CORE_SUBMISSION_CHECKLIST.md`](docs/11_CORE_SUBMISSION_CHECKLIST.md)를 사용하세요.
 
-2026-07-13 현재 코드에서 Codex가 직접 수행한 판정은 [`docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`](docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md)에 있습니다. 현재 결과는 **6 PASS, 3 PARTIAL, 5 FAIL**로 시스템 기능 완료 상태가 아닙니다.
+2026-07-13 최초 감사와 구현 후 재판정 증적은 [`docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`](docs/12_CORE_CHECKLIST_EXECUTED_2026-07-13.md)에 있습니다. 최종 제출 판정은 전체 자동검사와 사용자 수동 인수 결과까지 함께 확인해야 합니다.
 
 ## 기술 구성
 
@@ -57,12 +55,27 @@ PDF 25~29페이지의 시스템 설계 기능 14개만 점검하려면 [`docs/11
 ```text
 accounts/       사용자, 인증, 사용자 차단, 로그인 시도 제한
 market/         상품, 대화, 신고, 지갑·송금·원장
+community/      로그인 회원 전체 채팅, 증분 polling API, 읽기 전용 Admin
 config/         환경 설정, URL, 프록시 신뢰, 오류·보안 헤더
 templates/      서버 렌더링 화면과 오류 페이지
-static/         정적 CSS
+static/         정적 CSS와 전체 채팅의 안전한 DOM 갱신 JavaScript
 docs/           요구사항·설계·보안·테스트·AI 활용 기록
 var/            로컬 DB·업로드·수집 정적 파일(커밋 제외)
 ```
+
+### 주요 화면·경로
+
+| 화면 | 경로 | 접근 |
+|---|---|---|
+| 홈·검색 | `/` | 공개 |
+| 회원가입·로그인 | `/accounts/signup/`, `/accounts/login/` | 공개 |
+| 공개 사용자 프로필 | `/accounts/users/<username>/` | 활성 일반 계정만 공개 |
+| 마이페이지·비밀번호 변경 | `/accounts/me/`, `/accounts/me/password/` | 로그인 |
+| 내 상품 | `/listings/mine/` | 로그인 |
+| 상품 등록·상세 | `/listings/new/`, `/listings/<uuid>/` | 등록은 로그인, 상세는 공개 가능 상품 |
+| 1:1 대화·전체 채팅 | `/conversations/`, `/community/` | 로그인 |
+| 지갑 | `/wallet/` | 로그인 |
+| 관리자 | `/admin/` | 설정으로 활성화한 staff |
 
 ## 설치 방법
 
@@ -79,6 +92,8 @@ python -m pip install --require-hashes -r requirements-dev.lock
 python manage.py migrate
 python manage.py runserver 127.0.0.1:8000
 ```
+
+`migrate`는 사용자 소개글을 추가하는 `accounts` migration과 전체 채팅 테이블을 만드는 `community` migration을 포함해 적용합니다. 기존 로컬 DB에서도 코드를 실행하기 전에 반드시 수행하세요.
 
 활성화 없이 실행하려면 `python` 대신 `.\.venv\Scripts\python.exe`를 사용합니다.
 
@@ -132,6 +147,7 @@ python manage.py runserver 127.0.0.1:8000
 - 자신, staff, superuser 계정은 일괄 정지 대상에서 제외
 - 신고 원문·snapshot·처리 metadata와 메시지·대화·차단·로그인 시도·지갑·송금·원장은 관리자 화면에서 직접 추가·수정·삭제 불가
 - 신고 처리·상품 차단·사용자 정지 action은 선택한 Report 행을 트랜잭션에서 잠그고 `OPEN` 상태를 다시 확인한 뒤 실행
+- 자동 임계치로 차단된 상품 복구는 `change_report`와 `block_listing`을 모두 요구하며, 해당 상품의 OPEN 신고를 `DISMISSED`로 처리하고 감사로그를 남김
 - Admin 상품 변경도 현재 DB 행을 잠가 다시 확인하며, 이미 purge된 상품의 오래된 객체를 저장해 레코드를 되살리는 요청은 거부
 
 관리자 MFA와 관리 네트워크 제한은 구현되어 있지 않으므로 운영 전 별도 적용이 필요합니다.
@@ -189,7 +205,7 @@ python manage.py collectstatic --noinput
 
 ## 캐시 기반 요청 제한
 
-회원가입, 상품 등록, 메시지, 신고, 송금은 Django cache의 원자적 `add`/`incr`를 사용해 제한합니다. 일반·관리자 로그인은 계정별 5회/15분과 네트워크별 원시도 30회/15분을 cache+DB의 짧은 예약으로 제한합니다. 성공하면 해당 계정 상태만 지우고 네트워크 누적은 유지합니다.
+회원가입, 상품 등록, 1:1·전체 채팅 메시지, 전체 채팅 조회, 신고, 송금과 비밀번호 변경 시도는 Django cache의 원자적 `add`/`incr`를 사용해 제한합니다. 일반·관리자 로그인은 계정별 5회/15분과 네트워크별 원시도 30회/15분을 cache+DB의 짧은 예약으로 제한합니다. 성공하면 해당 계정 상태만 지우고 네트워크 누적은 유지합니다.
 
 현재 기본 cache는 `LocMemCache`이므로 개발용 단일 프로세스에서만 의미가 있습니다. 다중 프로세스·다중 인스턴스 운영에서는 모든 인스턴스가 공유하고 원자적 증가를 지원하는 Redis 같은 cache backend를 배포 설정에서 구성해야 합니다. 현재 저장소에는 Redis 패키지·접속 설정·장애 시 fail-closed 정책이 포함되어 있지 않으므로, 이를 적용하지 않은 상태를 분산 rate limit으로 간주하면 안 됩니다.
 
@@ -224,6 +240,9 @@ SOLD     -> ACTIVE
 - 보존 이미지 Admin endpoint는 `market.view_report`를 요구하고 읽을 때 SHA-256을 다시 비교합니다. 변조·누락이면 404로 거부하며 정상 응답은 `private, no-store`, `nosniff`이고 열람 actor/report를 보안 로그에 남깁니다.
 - 이미지 저장명 snapshot에는 DB index를 두어 교체·삭제 때 증거 참조 여부를 빠르게 확인합니다.
 - 관리자 action은 화면 노출 여부와 별개로 실행 시 권한을 다시 검사해 forged POST를 막습니다.
+- 같은 대상에 대한 서로 다른 신고자 3명의 `OPEN` 신고가 쌓이면 transaction 안에서 대상 행을 잠그고 상품을 임시 `BLOCKED`, 일반 사용자를 `is_suspended=True`·`is_active=False`로 전환합니다.
+- 상품 판매자의 자기신고와 사용자 자기신고는 자동 임계치에서 제외하고 staff·superuser 계정은 자동 정지하지 않습니다. 자동 결과는 보안 로그에 남고, 오탐·공모 가능성 때문에 영구 삭제는 하지 않습니다.
+- 자동 차단 상품은 권한 있는 관리자가 신고를 검토한 뒤 복구할 수 있습니다. 사용자 정지는 기존 관리자 해제 절차를 사용하며, 정식 이의제기 workflow는 운영 전 추가해야 합니다.
 
 ## 이미지 처리와 삭제
 
@@ -232,12 +251,17 @@ SOLD     -> ACTIVE
 - EXIF 방향 보정 후 메타데이터 없는 UUID 이름 JPEG로 재인코딩
 - 이미지 응답은 `private, no-store`, 고정 `image/jpeg`, `nosniff`
 - 이미지 교체 성공 후 신고 증거가 아닌 이전 파일은 삭제하고, DB 롤백 시 새 파일 정리
+- 기존 이미지 삭제의 `False` sentinel은 `FileField.save_form_data()`에 전달해 빈 파일값으로 정규화하고, boolean을 파일 객체로 저장하지 않음
 - 상품 soft delete·Admin purge 시 이미지 필드를 비우되 Report snapshot이 참조한 파일은 공개 route가 없는 private storage에 보존
 - 차단 상품 이미지는 공개되지 않으며 인가된 소유자·관리 권한만 guarded endpoint로 접근
 
 운영 reverse proxy/Nginx에서 `MEDIA_ROOT` 또는 `/_private-media/`를 정적 `alias`로 직접 서빙하면 guarded image endpoint와 신고 증거 비공개를 우회합니다. 두 경로는 절대 외부에 직접 노출하지 말고 모든 이미지 요청을 Django의 권한검사 이미지 view로만 전달하세요.
 
 저장소 삭제 실패는 로그로 남지만 호스트 장애 뒤 orphan 파일이 남을 수 있으므로 운영에서는 정기 조정 작업이 필요합니다.
+
+## 오류 응답의 정보 비노출
+
+`SafeExceptionMiddleware`는 개발·운영 모드 모두에서 처리되지 않은 예외를 사용자용 400·403·404·500 응답으로 바꾸며 예외 문자열, 요청 본문, 경로를 응답이나 보안 로그에 넣지 않습니다. DEBUG 모드의 미일치 URL도 URL pattern 목록 대신 일반 404를 반환합니다. 오류 템플릿 렌더링 자체가 실패하면 template engine·context processor·URL reverse에 의존하지 않는 정적 HTML fallback을 사용합니다. 운영에서는 이 방어와 별개로 반드시 `DJANGO_DEBUG=false`를 유지해야 합니다.
 
 ## DEMO POINT 원장
 
@@ -264,7 +288,7 @@ coverage run manage.py test
 coverage report -m
 ruff check .
 ruff format --check .
-bandit -c pyproject.toml -r accounts config market
+bandit -c pyproject.toml -r accounts community config market
 pip-audit -r requirements.lock --disable-pip
 ```
 
@@ -285,12 +309,13 @@ python manage.py check --deploy
 ## 알려진 제약과 운영 전제
 
 - SQLite, `LocMemCache`, 로컬 파일 저장소와 `runserver`는 단일 인스턴스 개발용입니다.
-- 운영 WSGI 서버, TLS 종료, Redis, PostgreSQL, 백업·복구, 중앙 로그·모니터링은 포함되어 있지 않습니다.
+- 운영 WSGI 서버, TLS 종료, Redis, PostgreSQL, 백업·복구, 중앙 로그·모니터링은 포함되어 있지 않습니다. 다중 사용자 운영 전 SQLite는 PostgreSQL로, 프로세스별 `LocMemCache`는 원자적 공유 Redis로 전환해야 합니다.
 - 관리자 MFA·관리 네트워크 제한은 구현되지 않았습니다.
 - Django Admin 호환을 위해 `/admin/` CSP에 inline style/script 예외가 있습니다.
 - 이메일·전화번호·실명·GPS 확인, 비밀번호 재설정, 실제 결제·배송·에스크로는 없습니다.
 - 대화는 참여자 접근통제를 적용하지만 종단간 암호화가 아닙니다.
-- 신고와 금지 상품 판정은 수동 관리자 절차입니다.
+- 전체 채팅은 WebSocket/SSE가 아니라 2초 간격의 제한된 polling이므로 최대 약 2초 지연이 있고, 사용자·인스턴스가 늘면 연결·쿼리 부하 시험과 WebSocket/채널 계층 전환 검토가 필요합니다.
+- 신고 임계치는 임시 가시성·계정 조치일 뿐 금지 상품의 진위를 자동 확정하지 않습니다. 신고 공모·오탐 이의제기, 사용자 복구 승인, 메시지·신고 증거 보존·파기 기간은 운영 정책으로 확정해야 합니다.
 - 원장 반전 필드는 있으나 사용자 취소·관리자 반전 workflow는 제공하지 않습니다.
 
 보안 제보와 전체 잔여 위험은 [`SECURITY.md`](SECURITY.md), KISA 49개 항목 판정은 [`docs/07_KISA_BASELINE.md`](docs/07_KISA_BASELINE.md)를 참고하세요.

@@ -5767,3 +5767,160 @@ input:-webkit-autofill:focus {
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06);
   }
 }
+
+/* PDF 25~29 system pages: profile, my page, my listings, and global chat. */
+.user-chip {
+  min-height: 44px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.user-chip:hover,
+.user-chip:focus-visible {
+  color: var(--ink);
+  background: #f3f3f3;
+  border-color: #d9d9d9;
+}
+
+.page-section {
+  min-height: 58vh;
+  padding-block: clamp(52px, 7vw, 88px) 100px;
+}
+
+.section-heading {
+  max-width: 760px;
+  margin-bottom: 30px;
+}
+
+.section-heading h1 {
+  margin-bottom: 12px;
+  font-size: clamp(2.15rem, 5vw, 3.7rem);
+}
+
+.section-heading > p {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.section-heading > a,
+.seller-row a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 24px;
+}
+
+.detail-card {
+  min-width: 0;
+  padding: clamp(24px, 4vw, 38px);
+  overflow-wrap: anywhere;
+  background: var(--white);
+  border: 1px solid #d8d8d8;
+  border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
+}
+
+.detail-card h1 {
+  margin-bottom: 24px;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+}
+
+.detail-card h2 {
+  margin-bottom: 12px;
+  font-size: 1.2rem;
+}
+
+.detail-card > p:not(.eyebrow) {
+  color: var(--muted);
+  white-space: normal;
+}
+
+.page-section > .detail-card {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.global-chat-page .chat-card {
+  border-color: #d7d7d7;
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.1);
+}
+
+.global-chat-page .chat-thumb {
+  color: var(--white);
+  background: var(--ink);
+}
+
+.global-chat-page .chat-thumb i {
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+.global-chat-page .chat-product small {
+  color: #444444;
+}
+
+.global-chat-page .message-thread {
+  background: #f2f2f2;
+}
+
+.global-chat-page .message-block p {
+  background: var(--white);
+  border-color: #d6d6d6;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.045);
+}
+
+.global-chat-page .message-own .message-block p {
+  color: var(--white);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.global-chat-page .message-own .message-avatar,
+.global-chat-page .thread-empty > span {
+  color: var(--white);
+  background: var(--ink);
+}
+
+.global-chat-page .message-form {
+  background: var(--white);
+  border-top-color: #d8d8d8;
+}
+
+.global-chat-page .message-form textarea {
+  border-color: #bdbdbd;
+}
+
+@media (max-width: 900px) {
+  .detail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .page-section {
+    padding-block: 42px 70px;
+  }
+
+  .detail-card {
+    padding: 23px 20px;
+    border-radius: 17px;
+  }
+
+  .global-chat-page .chat-shell {
+    padding-bottom: 60px;
+  }
+}

@@ -41,7 +41,7 @@
       <p class="detail-price"><strong>{{ listing.price_points }}</strong><span>포인트</span></p>
       <div class="seller-row">
         <span class="seller-avatar" aria-hidden="true">{{ listing.seller.username|first|upper }}</span>
-        <div><span>판매자</span><strong>{{ listing.seller.username }}</strong><small>{{ listing.seller.date_joined|date:"Y년 m월" }} 가입 · 판매 완료 {{ seller_completed_count }}건</small></div>
+        <div><span>판매자</span><strong><a href="{% url 'accounts:public_profile' listing.seller.username %}">{{ listing.seller.username }}</a></strong><small>{{ listing.seller.date_joined|date:"Y년 m월" }} 가입 · 판매 완료 {{ seller_completed_count }}건</small></div>
         {% if listing.created_at %}<time datetime="{{ listing.created_at|date:'c' }}">{{ listing.created_at|timesince }} 전 등록</time>{% endif %}
       </div>
 
@@ -58,6 +58,7 @@
 
       <div class="detail-actions">
         {% if user == listing.seller %}
+          <a class="button button-outline" href="{% url 'market:my_listings' %}">내 상품 목록</a>
           {% if listing.status == 'ACTIVE' or listing.status == 'RESERVED' %}<a class="button button-primary" href="{% url 'market:listing_update' listing.pk %}">상품 정보 수정</a>{% endif %}
           {% if listing.status != 'BLOCKED' and listing.status != 'DELETED' %}<a class="button button-danger-outline" href="{% url 'market:listing_delete' listing.pk %}">상품 삭제</a>{% endif %}
         {% elif user.is_authenticated and can_contact %}

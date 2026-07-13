@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}내 상품 · TINY MARKET{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="shell page-hero-inner">
+    <div>
+      <span class="eyebrow">MY LISTINGS</span>
+      <h1>내 상품 관리</h1>
+      <p>등록한 상품의 공개 상태를 확인하고 안전하게 수정하거나 판매 상태를 바꿀 수 있어요.</p>
+    </div>
+    <a class="button button-primary" href="{% url 'market:listing_create' %}">새 상품 등록</a>
+  </div>
+</section>
+
+<section class="market-section shell" aria-labelledby="my-listings-title">
+  <div class="section-heading-row">
+    <div>
+      <h2 id="my-listings-title">등록한 상품</h2>
+      <p>삭제한 상품을 제외한 현재 상품 {{ page_obj.paginator.count }}개입니다.</p>
+    </div>
+    <a class="button button-outline" href="{% url 'market:home' %}">공개 상품 둘러보기</a>
+  </div>
+
+  {% if listings %}
+    <div class="listing-grid">
+      {% for listing in listings %}
+        <article class="listing-card">
+          <a class="listing-card-link" href="{% url 'market:listing_detail' listing.pk %}" aria-label="{{ listing.title }} 관리 화면 열기">
+            <div class="listing-photo">
+              {% if listing.image %}
+                <img src="{% url 'market:listing_image' listing.pk %}" alt="{{ listing.title }} 상품 사진" loading="lazy">
+              {% else %}
+                <span class="photo-placeholder" aria-hidden="true"><i></i><b>TINY FIND</b></span>
+              {% endif %}
+              <span class="status-pill status-{{ listing.status|lower }}">{{ listing.get_status_display|default:listing.status }}</span>
+            </div>
+            <div class="listing-card-body">
+              <div class="listing-kicker">
+                <span>{{ listing.get_category_display|default:listing.category }}</span>
+                <span>{{ listing.get_condition_display|default:listing.condition }}</span>
+              </div>
+              <h3>{{ listing.title }}</h3>
+              <p class="listing-price"><strong>{{ listing.price_points }}</strong> 포인트</p>
+              {% if listing.status == 'BLOCKED' %}
+                <p class="form-alert" data-visibility="private">운영 검토로 비공개된 상품입니다.</p>
+              {% else %}
+                <p data-visibility="public">현재 공개 상태: {{ listing.get_status_display }}</p>
+              {% endif %}
+            </div>
+          </a>
+        </article>
+      {% endfor %}
+    </div>
+
+    {% if page_obj.has_other_pages %}
+      <nav class="pagination" aria-label="내 상품 목록 페이지">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}" rel="prev">이전</a>{% else %}<span class="disabled">이전</span>{% endif %}
+        <span class="page-current"><strong>{{ page_obj.number }}</strong> / {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}" rel="next">다음</a>{% else %}<span class="disabled">다음</span>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="empty-state">
+      <h2>아직 등록한 상품이 없어요.</h2>
+      <p>사용하지 않는 물건의 다음 주인을 찾아보세요.</p>
+      <a class="button button-primary" href="{% url 'market:listing_create' %}">첫 상품 등록하기</a>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

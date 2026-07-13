@@ -4,28 +4,41 @@
 
 | ID | 요구사항 | 우선순위 | 인수 조건 | 구현/증적 | 테스트 | 상태 |
 |---|---|---:|---|---|---|---|
-| REQ-001 | 과제 PDF 35페이지의 최소 기능 전체 충족 | P0 | REQ-F001~F007 구현 및 검증 | PDF 35페이지·기능 코드 | 120-test 과거 스냅샷, F002 수동 QA 실패 | 구현 |
+| REQ-001 | 과제 PDF 35페이지의 최소 기능 전체 충족 | P0 | REQ-F001~F007 구현 및 검증 | PDF 35페이지·기능 코드 | 변경 기능 79개와 전체 168개 통과, coverage 94% | 완료 |
 | REQ-002 | 요구사항·설계·구현·테스트·유지보수 전 과정 보고 | P0 | 각 단계의 작업, 이유, 결과, 증적 포함 | `docs/`, README, 최종 PDF | DOC-T01 | 구현 |
-| REQ-003 | 발견한 보안약점과 수정 내역 기록 | P0 | SEC-ID별 원인·수정·재시험·잔여위험 포함 | `04_SECURITY_FINDINGS.md` | SEC-T01, SEC-031·032 Open | 구현 |
+| REQ-003 | 발견한 보안약점과 수정 내역 기록 | P0 | SEC-ID별 원인·수정·재시험·잔여위험 포함 | `04_SECURITY_FINDINGS.md` | SEC-T01, SEC-031·032 Fixed, 표적·전체 회귀와 브라우저 재검증 완료 | 완료 |
 | REQ-004 | GitHub Public 저장소 제공 | P0 | 로그아웃 브라우저에서 열림 | 최종 URL·릴리스 SHA | REL-T01 | 설계 |
 | REQ-005 | README에 환경 설정 및 실행 방법 명시 | P0 | 클린 환경에서 README 명령으로 실행 성공 | `README.md` | REL-T02 | 구현 |
 | REQ-006 | AI 도구 적극 활용 및 검증 과정 기록 | P0 | 사용 목적·결과·채택 여부·사람 검증 포함 | `05_AI_USAGE_LOG.md` | DOC-T02 | 검증 |
-| REQ-007 | KISA 가이드 기반 개발보안 적용 | P0 | 49개 구현단계 항목의 A/N/A 근거와 검증 존재 | `07_KISA_BASELINE.md` | KISA-T01, 에러처리 재검증 필요 | 구현 |
+| REQ-007 | KISA 가이드 기반 개발보안 적용 | P0 | 49개 구현단계 항목의 A/N/A 근거와 검증 존재 | `07_KISA_BASELINE.md` | KISA-T01, 오류 응답·정적·공급망·deploy 재검증 통과 | 완료 |
 | REQ-008 | 제출 PDF에 GitHub 링크 포함 | P0 | URL 클릭 및 로그아웃 접근 성공 | 최종 PDF | REL-T03 | 설계 |
 | REQ-009 | 제출 파일명에 공백 없이 지정 형식 사용 | P0 | `[WHS][secure-coding][XX반]이름(뒷4자리).pdf`와 일치 | 최종 PDF | REL-T04 | 설계 |
 | REQ-010 | 개인 작업 목표 2026-07-12~13, 공식 제출 기한 2026-07-24 | P0 | 7월 13일 결과·보고서 초안 완성, 7월 24일 전 제출 | 개발 일지·제출 증적 | REL-T05 | 구현 |
+
+### 현재 미충족 조건과 다음 조치
+
+코드·로컬 보안 검증에서 확인된 미충족은 모두 조치했다. 남은 항목은 이 작업트리만으로 완료하거나 사실을 추정할 수 없는 외부·개인 제출 증적이다.
+
+| 연결 요구사항 | 실제 미충족 조건 | 다음 조치 | 완료 증적 |
+|---|---|---|---|
+| REQ-004 | Public GitHub URL·제출 SHA·tag와 로그아웃 공개 결과 없음 | 최종 commit 후 Public 저장소에 push하고 시크릿/로그아웃 창에서 열기 | repository URL, SHA, 확인 시각, 화면 캡처 |
+| REQ-005 | 새 디렉터리 clean clone에서 README 재현 미실행 | Public 저장소를 새 경로에 clone해 hash 설치·migration·test·server를 README만 보고 실행 | 명령 로그와 대상 SHA |
+| REQ-008 | 최종 PDF와 클릭 가능한 GitHub 링크 없음 | 보고서 placeholder에 URL·SHA·원격 CI를 넣고 PDF 렌더링 | PDF에서 클릭한 공개 URL |
+| REQ-009 | 반·이름·전화번호 뒷자리 정보가 없어 최종 파일명을 만들 수 없음 | 개인정보를 입력하고 공백 없는 지정 정규식으로 저장 | 최종 파일명과 재열기 결과 |
+| REQ-010 | 원격 Actions/CodeQL·LMS 제출 결과 없음 | 제출 SHA의 원격 검사 성공을 확인한 뒤 2026-07-24 23:59:59 전 업로드 | Actions/CodeQL URL, LMS 확인 |
+| 수동 접근성·운영 | 실제 키보드·스크린리더·200% 확대와 외부 reverse proxy 검증 미실행 | 사용자 기기에서 인수하고, 외부 배포를 선택할 때 private media·오류 응답 경계를 확인 | 체크리스트·캡처·배포 설정 |
 
 ## PDF 최소 기능 요구사항
 
 | ID | 원문 요구사항 | 인수 조건 | 핵심 보안 조건 | 구현 | 테스트 | 상태 |
 |---|---|---|---|---|---|---|
 | REQ-F001 | 사람들이 플랫폼에 가입할 수 있어야 함 | 약한 비밀번호는 거부되고 정상 사용자는 가입·로그인·로그아웃 가능 | 역할 Mass Assignment 금지, 해시 저장, 일반·Admin 로그인 제한, 가입 rate limit, 세션 회전 | `accounts` | 가입 quota·proxy 경계·Admin 로그인·정지 DB 불변식 포함 테스트 | 검증 |
-| REQ-F002 | 상품들을 올리고 볼 수 있어야 함 | 본인 상품 CRUD, 판매 상태 변경과 공개 상품 조회 가능 | 판매자 서버 결정, 계정 quota/rate, IDOR·stale update 차단, 이미지 검증·no-store·정리 | `market.Listing` | 기존 120 tests에 이미지 삭제 sentinel 분기 누락; SEC-031 Open | 구현 |
+| REQ-F002 | 상품들을 올리고 볼 수 있어야 함 | 본인 상품 CRUD, 판매 상태 변경과 공개 상품 조회 가능 | 판매자 서버 결정, 계정 quota/rate, IDOR·stale update 차단, 이미지 검증·no-store·정리 | `market.Listing`, `/listings/mine/` | 이미지 유지·삭제·교체·모순·불량 업로드 회귀 포함 79-test 변경 기능 묶음 통과; SEC-031 수정 | 검증 |
 | REQ-F003 | 플랫폼 사용자끼리 소통 가능 | 상품별 판매자·구매 희망자 1:1 대화와 페이지 목록 가능 | 참여자 외 접근 금지, sender 서버 결정, 차단 후 전송 금지, 30개 페이지·Subquery | `Conversation`, `Message` | 비참여자·발신자·차단·판매완료·N+1 회귀 테스트 | 검증 |
-| REQ-F004 | 악성 사용자나 상품 차단 | 사용자는 실제 대화 상대·상품 신고와 개인 차단, 관리자는 계정 정지·상품 숨김 가능 | 대화 기반 대상, `suspend_user`·`block_listing`, read-only snapshot·SHA, `view_report` 증거 endpoint, 보호 계정·비공개 placeholder | `UserBlock`, `Report`, Admin | 열거 거부·위조 POST·보호 계정·snapshot/이미지 보존·SHA 재검증·비공개 metadata 테스트 | 검증 |
+| REQ-F004 | 악성 사용자나 상품 차단 | 사용자는 실제 대화 상대·상품 신고와 개인 차단, 관리자는 계정 정지·상품 숨김 가능 | 대화 기반 대상, 서로 다른 OPEN 신고자 3명 자동조치, `suspend_user`·`block_listing`, read-only snapshot·SHA, 보호 계정·복구·감사 | `UserBlock`, `Report`, 자동 임계치 service, Admin | 유일 신고자·자동 임시 차단/정지·staff/superuser 보호·상품 복구 및 기존 moderation 회귀 | 검증 |
 | REQ-F005 | 사용자 간 송금 가능 | DEMO POINT를 잔액 범위 내에서 송금하고 내역 조회 가능 | 실제 금융정보 미수집, 원자적 이중 원장, 음수 방지, 멱등키, append-only 원장 | `WalletAccount`, `Transfer`, `LedgerEntry` | 이중 원장·멱등·롤백·인스턴스/QuerySet 불변성 테스트 | 검증 |
 | REQ-F006 | 상품 검색 가능 | 키워드·카테고리·상태·지역 필터와 페이지네이션 | ORM, 길이·정렬 허용목록, 차단 상품 제외 | `market.home` | SQLi 문자열 검색·차단 상품 제외 테스트 | 검증 |
-| REQ-F007 | 관리자가 모든 요소 관리 | 각 권한을 가진 staff만 해당 요소 조회·허용된 조치 가능 | 계정 5회·네트워크 30회, 전용 조치 권한, Report·Listing 행 재검사, stale purge 부활 차단, read-only 증거·원장 | Django Admin | 전용 권한·위조 POST·경합 조치·stale resurrection·증거/원장 불변 테스트 | 검증 |
+| REQ-F007 | 관리자가 모든 요소 관리 | 각 권한을 가진 staff만 해당 요소 조회·허용된 조치 가능 | 계정 5회·네트워크 30회, 전용 조치 권한, Report·Listing 행 재검사, stale purge 부활 차단, 채팅·증거·원장 read-only | Django Admin | 전용 권한·위조 POST·경합 조치·자동 차단 복구·채팅 증거 불변·원장 불변 테스트 | 검증 |
 
 ## PDF 25~29페이지 상세 시스템 설계 추적
 
@@ -33,26 +46,26 @@
 
 | ID | 상세 요구 | 현재 구현·증적 | 현재 판정 | 완료하려면 |
 |---|---|---|:---:|---|
-| REQ-SD01 | 가입·로그인·아이디 중복 방지 | accounts route, case-insensitive UNIQUE, password hash, 회귀 | PASS | 최종 재회귀 |
-| REQ-SD02 | 사용자 조회·프로필 | 상품 상세의 판매자 요약만 있음 | FAIL | profile route·template·소개글 조회 |
-| REQ-SD03 | 마이페이지 소개글·비밀번호 변경 | 공개 계정 수정 route·Form 없음 | FAIL | 본인 전용 update·password change와 세션 유지/회전 테스트 |
-| REQ-SD04 | 상품 등록 | Listing/Form/create와 필드·이미지 검증 회귀 | PASS | 최종 재회귀 |
-| REQ-SD05 | 내가 등록한 상품 확인·관리 | `?mine=1`, 소유자 수정·상태·soft delete | PARTIAL | UI 접근 경로와 SEC-031 이미지 삭제 수정 |
-| REQ-SD06 | 비회원 공개 상품 목록 | 공개 상태·활성 판매자 필터와 카드·상세 링크 | PASS | 최종 화면 확인 |
-| REQ-SD07 | 상품 상세 | UUID 상세, 상품·가격·사진·판매자 정보 | PASS | 최종 화면 확인 |
-| REQ-SD08 | 실시간 전체 채팅 | 모델·route·화면·실시간 전송 방식 없음 | FAIL | 전체 채팅 모델/화면과 WebSocket·SSE·polling 중 안전한 방식 |
-| REQ-SD09 | 1대1 채팅 | 상품별 Conversation/Message와 참여자 인가 회귀 | PASS | 최종 재회귀 |
-| REQ-SD10 | 사용자·상품 신고와 사유 | Report/Form/view, 서버 대상 결정, snapshot 회귀 | PASS | 최종 재회귀 |
-| REQ-SD11 | 신고 횟수 기반 상품 차단·삭제 | 관리자 수동 block/purge만 있음 | FAIL | 유일 신고자 임계치, 자동 차단, 복구·감사 정책 |
-| REQ-SD12 | 신고 횟수 기반 사용자 휴면 | 관리자 수동 suspension만 있음 | FAIL | 임계치 자동조치, 보호 계정, 이의·복구 정책 |
-| REQ-SD13 | 27페이지 필수 화면 | 홈·가입·로그인·상품·신고·1대1 대화 화면 | PARTIAL | 프로필·마이페이지·전체 채팅과 UI 접근 경로 |
-| REQ-SD14 | 28페이지 DB 구조와 기능상 추가 관계 | Listing·Report·FK·제약·password hash | PARTIAL | User 소개글과 전체 채팅 데이터 구조 |
+| REQ-SD01 | 가입·로그인·아이디 중복 방지 | `/accounts/signup/`, `/accounts/login/`, `Lower(username)` UNIQUE, Django password hash와 가입·로그인 보안 회귀 | PASS | 전체 168개 회귀 통과 |
+| REQ-SD02 | 사용자 조회·프로필 | `/accounts/users/<username>/`, `User.bio`, 활성 일반회원의 username·bio만 primitive allowlist로 공개; email·권한·정지정보 비공개, XSS escape 회귀 | PASS | `PublicProfileSecurityTests` 통과 |
+| REQ-SD03 | 마이페이지 소개글·비밀번호 변경 | `/accounts/me/`, `/accounts/me/password/`; `ProfileForm`은 bio만 허용하고 현재 비밀번호·Django 강도 validator·256자 사전상한·사용자당 10회/시간·세션 hash 갱신 적용 | PASS | `MyPageSecurityTests` 통과 |
+| REQ-SD04 | 상품 등록 | `ListingForm`·`listing_create`, 제목·설명·가격·사진·판매자를 서버 결정하고 이미지 검증·quota/rate 적용 | PASS | `ListingSecurityTests` 통과 |
+| REQ-SD05 | 내가 등록한 상품 확인·관리 | `/listings/mine/`와 header UI, 세션 사용자의 삭제 제외 목록 20개 pagination, 소유자 수정·상태·soft delete; FileField `save_form_data()`로 SEC-031 수정 | PASS | 내 상품 격리와 이미지 유지·삭제·교체·모순·불량 업로드 회귀 통과 |
+| REQ-SD06 | 비회원 공개 상품 목록 | 공개 상태·활성 판매자 필터, 검색·카드·UUID 상세 링크, 차단·삭제 상품 제외 | PASS | `ListingSecurityTests` 및 과거 전체 회귀 |
+| REQ-SD07 | 상품 상세 | UUID 상세에 상품명·설명·가격·사진·상태·판매자 정보와 공개 프로필 링크 제공 | PASS | 상세 XSS·비공개 접근·프로필 링크 회귀 통과 |
+| REQ-SD08 | 실시간 전체 채팅 | `/community/`, `/community/messages/`, `/community/send/`, `GlobalChatMessage`; 2초 증분 polling·서명 cursor·조회/렌더 상한·visibility pause/backoff | PASS | 인증·CSRF·서버 sender·XSS `textContent`·차단 양방향·rate·cursor·read-only Admin 회귀 통과 |
+| REQ-SD09 | 1대1 채팅 | 상품별 `Conversation`·`Message`, 참여자만 조회·전송, 차단·판매완료 정책과 30개 pagination | PASS | `ConversationSecurityTests` 1차 및 과거 전체 회귀 통과 |
+| REQ-SD10 | 사용자·상품 신고와 사유 | `Report`·`ReportForm`·`report_create`, reporter·target 서버 결정, OPEN 중복 제약·증거 snapshot/SHA | PASS | `ModerationSecurityTests` 통과 |
+| REQ-SD11 | 신고 횟수 기반 상품 차단·삭제 | 서로 다른 OPEN 신고자 3명에서 transaction·행 잠금 후 자동 `BLOCKED` 임시 비공개; 자동 사유 식별, 보안 log, 권한 있는 Admin의 자동 차단만 복구·신고 기각 및 별도 purge | PASS | 2명/중복 미발동·3명 발동·안전 redirect·복구·수동 차단 비복구 회귀 통과 |
+| REQ-SD12 | 신고 횟수 기반 사용자 휴면 | 서로 다른 OPEN 신고자 3명에서 일반 사용자 `is_suspended=True`, `is_active=False`; staff/superuser 자동조치 제외, 보안 log, 전용 권한 Admin `unsuspend_selected` 복구 | PASS | 자동 정지·자기 신고 미산입·staff/superuser 보호 회귀 통과; 해제 action은 코드·권한 경계 검토 |
+| REQ-SD13 | 27페이지 필수 화면 | 기본·가입·로그인·상품 목록/등록/상세·신고·1대1 대화·프로필·마이페이지·내 상품·전체 채팅이 header 또는 화면 link로 연결 | PASS | URL reverse·template link 및 관련 view 회귀 통과 |
+| REQ-SD14 | 28페이지 DB 구조와 기능상 추가 관계 | `User.bio`, `Listing`, `Report`, `Conversation`, `Message`, `GlobalChatMessage(sender FK, body 1000, created_at, time/id index)`와 제약·password hash·migrations | PASS | 모델·migration·DB 제약 및 기능 회귀 통과 |
 
-현재 집계는 **6 PASS / 3 PARTIAL / 5 FAIL**이며 상세 시스템 기능은 `NOT READY`다. 수행 증적은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`에 기록한다.
+현재 집계는 **14 PASS / 0 PARTIAL / 0 FAIL**이며 PDF 25~29페이지의 상세 시스템 기능 범위는 `READY`다. 변경 기능 6개 테스트 클래스 79개가 53.066초에 통과했고, 최종 전체 168개도 104.916초에 통과했으며 coverage는 94%다. 수행 증적은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`에 기록한다.
 
 ## 2026-07-12 검증 스냅샷
 
-이 표는 당시 실제 실행 결과를 보존한 **과거 스냅샷**이다. 2026-07-13 사용자 QA에서 기존 이미지 삭제 500과 DEBUG 기술 화면 노출 위험을 발견했으므로, SEC-031·032 수정과 신규 회귀가 끝날 때까지 최종 합격 근거로 사용하지 않는다.
+이 표는 당시 실제 실행 결과를 보존한 **과거 스냅샷**이다. 이후 SEC-031·032를 수정하고 변경 기능 79개 및 최종 전체 168개를 재검증했으므로 상세 시스템 기능 판정과 최신 품질 수치는 위 현재 표와 12번 수행 문서가 대체한다.
 
 | 검증 | 결과 | 요구사항 연결 |
 |---|---|---|
@@ -84,6 +97,10 @@
 | hash lock·CI·CodeQL | 의존성 치환과 회귀의 조기 탐지 | `--require-hashes`, 최소 권한 CI, CodeQL security-extended, Dependabot |
 | 신고 증거와 private 이미지 보존 | 판매자가 신고 직후 원문·이미지를 바꾸거나 삭제·변조하는 증거 소실 방지 | read-only Report, snapshot·SHA-256, 증거명 index, `view_report` endpoint의 매 요청 hash·no-store·nosniff·actor log, private 보존 테스트 |
 | 운영 fail-closed 비밀 | 짧거나 예측 가능한 키와 설정 오타를 안전한 구성으로 오인하지 않도록 함 | 운영 key 50자·문자 다양성·금지 prefix, 엄격 boolean·HTTPS·host negative tests |
+| 공개 프로필·마이페이지 최소권한 | 프로필 공개로 email·권한·정지 사유가 새거나 자기소개 수정으로 privilege mass assignment가 발생하는 것을 방지 | 공개 primitive username·bio allowlist, 활성 일반회원만 조회, `ProfileForm.fields=("bio",)`, XSS·위조 필드 회귀 |
+| 비밀번호 변경 재인증·자원 상한 | 탈취 세션의 자격증명 변경과 과대 입력의 password hashing 자원 고갈 방지 | 현재 비밀번호, Django validator, 입력 256자 사전 거부, 사용자당 10회/시간, 성공 후 `update_session_auth_hash` 세션 회전 |
+| 전체 채팅 bounded polling | WebSocket/SSE 상시 연결의 운영 복잡도·연결 고갈을 피하면서 짧은 구현 기간에 새 메시지를 자동 반영 | 2초 증분 polling, 서명 cursor, 요청당 최대 100·초기 50·DOM 200, poll 40/분·send 10/분, hidden pause·지수 backoff, `textContent` |
+| 자동 신고 임계치와 복구 | 한 사용자의 중복 신고로 자동제재하거나 자동 영구삭제해 증거·정상 콘텐츠를 잃는 위험 방지 | 서로 다른 OPEN 신고자 3명, transaction·대상 행 잠금, 상품 임시 차단·일반 사용자 임시 정지, staff/superuser 보호, Admin 수동 복구/해제와 보안 log |
 
 ## 명시적 N/A 및 향후 범위
 

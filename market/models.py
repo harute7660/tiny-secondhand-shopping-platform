@@ -9,6 +9,13 @@ from django.db.models import F, Q
 MIN_LISTING_PRICE = 100
 MAX_LISTING_PRICE = 100_000_000
 MAX_TRANSFER_POINTS = 10_000_000
+AUTOMATIC_REPORT_THRESHOLD = 3
+AUTOMATIC_LISTING_BLOCK_REASON = (
+    "[AUTO] 서로 다른 신고자 3명의 미처리 신고가 접수되어 임시 차단되었습니다."
+)
+AUTOMATIC_USER_SUSPENSION_REASON = (
+    "[AUTO] 서로 다른 신고자 3명의 미처리 신고가 접수되어 계정이 임시 정지되었습니다."
+)
 
 
 class ImmutableLedgerError(ValidationError):

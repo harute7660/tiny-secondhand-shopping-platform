@@ -15,6 +15,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import Client, RequestFactory, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from PIL import Image
 
 from accounts.models import UserBlock
@@ -29,6 +30,8 @@ from .admin import (
 )
 from .forms import ListingForm
 from .models import (
+    AUTOMATIC_LISTING_BLOCK_REASON,
+    AUTOMATIC_USER_SUSPENSION_REASON,
     Conversation,
     Favorite,
     ImmutableLedgerError,
@@ -53,6 +56,19 @@ def make_image(name="sample.png", image_format="PNG", content_type="image/png"):
     output = BytesIO()
     Image.new("RGB", (40, 30), "#0E7C72").save(output, format=image_format)
     return SimpleUploadedFile(name, output.getvalue(), content_type=content_type)
+
+
+def listing_update_data(listing, **overrides):
+    data = {
+        "title": listing.title,
+        "description": listing.description,
+        "price_points": listing.price_points,
+        "category": listing.category,
+        "condition": listing.condition,
+        "region": listing.region,
+    }
+    data.update(overrides)
+    return data
 
 
 class MarketTestCase(TestCase):
@@ -109,6 +125,78 @@ class ListingSecurityTests(MarketTestCase):
         self.listing.refresh_from_db()
         self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
 
+    def test_my_listings_requires_login_and_shows_only_owner_records(self):
+        blocked = Listing.objects.create(
+            seller=self.alice,
+            title="소유자에게만 보이는 차단 상품",
+            description="자동 또는 관리자 차단 상태도 소유자는 확인할 수 있습니다.",
+            price_points=2_000,
+            category=Listing.Category.OTHER,
+            condition=Listing.Condition.GOOD,
+            region="서울",
+            status=Listing.Status.BLOCKED,
+            blocked_reason="검토 중",
+        )
+        deleted = Listing.objects.create(
+            seller=self.alice,
+            title="삭제된 상품",
+            description="내 상품 목록에서 제외합니다.",
+            price_points=2_000,
+            category=Listing.Category.OTHER,
+            condition=Listing.Condition.GOOD,
+            region="서울",
+            status=Listing.Status.DELETED,
+        )
+        other = Listing.objects.create(
+            seller=self.bob,
+            title="다른 판매자의 비공개 상품",
+            description="다른 판매자의 목록에는 접근할 수 없습니다.",
+            price_points=2_000,
+            category=Listing.Category.OTHER,
+            condition=Listing.Condition.GOOD,
+            region="서울",
+        )
+        url = reverse("market:my_listings")
+
+        anonymous = self.client.get(url)
+        self.assertEqual(anonymous.status_code, 302)
+        self.assertIn(reverse("accounts:login"), anonymous.url)
+
+        self.client.force_login(self.alice)
+        response = self.client.get(url, {"seller": self.bob.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.listing.title)
+        self.assertContains(response, blocked.title)
+        self.assertContains(response, 'data-visibility="private"', html=False)
+        self.assertContains(response, reverse("market:listing_detail", args=[blocked.pk]))
+        self.assertNotContains(response, deleted.title)
+        self.assertNotContains(response, other.title)
+        self.assertTrue(
+            all(item.seller_id == self.alice.pk for item in response.context["listings"])
+        )
+
+    def test_my_listings_ignores_forged_owner_query(self):
+        own = Listing.objects.create(
+            seller=self.bob,
+            title="로그인 사용자 소유 상품",
+            description="서버 세션으로 소유자를 결정합니다.",
+            price_points=2_000,
+            category=Listing.Category.OTHER,
+            condition=Listing.Condition.GOOD,
+            region="서울",
+        )
+        self.client.force_login(self.bob)
+
+        response = self.client.get(
+            reverse("market:my_listings"),
+            {"seller": self.alice.pk, "user": self.alice.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, own.title)
+        self.assertNotContains(response, self.listing.title)
+
     def test_xss_payload_is_escaped_on_detail(self):
         self.listing.title = '<script>alert("x")</script>'
         self.listing.description = '<img src=x onerror=alert("x")>'
@@ -119,6 +207,14 @@ class ListingSecurityTests(MarketTestCase):
         self.assertNotContains(response, '<script>alert("x")</script>', html=False)
         self.assertContains(response, "&lt;script&gt;", html=False)
         self.assertNotContains(response, '<img src=x onerror=alert("x")>', html=False)
+
+    def test_listing_detail_links_to_seller_public_profile(self):
+        response = self.client.get(reverse("market:listing_detail", args=[self.listing.pk]))
+        profile_url = reverse("accounts:public_profile", args=[self.alice.username])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'href="{profile_url}"', html=False)
+        self.assertContains(response, self.alice.username)
 
     def test_search_uses_orm_and_blocked_listing_is_hidden(self):
         Listing.objects.create(
@@ -200,6 +296,116 @@ class ListingSecurityTests(MarketTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Listing.objects.count(), 1)
+
+    def test_update_without_image_input_keeps_existing_image(self):
+        with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.listing.image.save("existing.png", make_image("existing.png"), save=True)
+            self.listing.refresh_from_db()
+            original_name = self.listing.image.name
+            storage = self.listing.image.storage
+            self.client.force_login(self.alice)
+
+            response = self.client.post(
+                reverse("market:listing_update", args=[self.listing.pk]),
+                listing_update_data(self.listing, title="이미지는 그대로 유지"),
+            )
+
+            self.assertEqual(response.status_code, 302)
+            self.listing.refresh_from_db()
+            self.assertEqual(self.listing.image.name, original_name)
+            self.assertTrue(storage.exists(original_name))
+
+    def test_update_clear_image_uses_filefield_normalization_and_removes_file(self):
+        with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.listing.image.save("clear.png", make_image("clear.png"), save=True)
+            self.listing.refresh_from_db()
+            original_name = self.listing.image.name
+            storage = self.listing.image.storage
+            self.client.force_login(self.alice)
+
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    reverse("market:listing_update", args=[self.listing.pk]),
+                    listing_update_data(self.listing, **{"image-clear": "on"}),
+                )
+
+            self.assertEqual(response.status_code, 302)
+            self.listing.refresh_from_db()
+            self.assertFalse(self.listing.image)
+            self.assertFalse(storage.exists(original_name))
+
+    def test_update_replaces_existing_image_and_removes_superseded_file(self):
+        with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.listing.image.save("old.png", make_image("old.png"), save=True)
+            self.listing.refresh_from_db()
+            original_name = self.listing.image.name
+            storage = self.listing.image.storage
+            self.client.force_login(self.alice)
+
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    reverse("market:listing_update", args=[self.listing.pk]),
+                    listing_update_data(
+                        self.listing,
+                        image=make_image("replacement.png"),
+                    ),
+                )
+
+            self.assertEqual(response.status_code, 302)
+            self.listing.refresh_from_db()
+            self.assertTrue(self.listing.image)
+            self.assertNotEqual(self.listing.image.name, original_name)
+            self.assertTrue(storage.exists(self.listing.image.name))
+            self.assertFalse(storage.exists(original_name))
+
+    def test_update_rejects_clear_and_upload_contradiction_without_changing_image(self):
+        with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.listing.image.save("conflict.png", make_image("conflict.png"), save=True)
+            self.listing.refresh_from_db()
+            original_name = self.listing.image.name
+            storage = self.listing.image.storage
+            self.client.force_login(self.alice)
+
+            response = self.client.post(
+                reverse("market:listing_update", args=[self.listing.pk]),
+                listing_update_data(
+                    self.listing,
+                    image=make_image("contradiction.png"),
+                    **{"image-clear": "on"},
+                ),
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("image", response.context["form"].errors)
+            self.listing.refresh_from_db()
+            self.assertEqual(self.listing.image.name, original_name)
+            self.assertTrue(storage.exists(original_name))
+
+    def test_update_rejects_invalid_image_without_changing_existing_image(self):
+        with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.listing.image.save("valid.png", make_image("valid.png"), save=True)
+            self.listing.refresh_from_db()
+            original_name = self.listing.image.name
+            storage = self.listing.image.storage
+            self.client.force_login(self.alice)
+
+            response = self.client.post(
+                reverse("market:listing_update", args=[self.listing.pk]),
+                listing_update_data(
+                    self.listing,
+                    image=SimpleUploadedFile(
+                        "payload.jpg",
+                        b"not-an-image",
+                        content_type="image/jpeg",
+                    ),
+                ),
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("image", response.context["form"].errors)
+            self.listing.refresh_from_db()
+            self.assertEqual(self.listing.image.name, original_name)
+            self.assertTrue(storage.exists(original_name))
 
     def test_soft_delete_removes_private_image_after_commit(self):
         self.client.force_login(self.bob)
@@ -884,6 +1090,38 @@ class ModerationSecurityTests(MarketTestCase):
         request._messages = FallbackStorage(request)
         return request
 
+    @staticmethod
+    def _reporter(username):
+        return get_user_model().objects.create_user(username=username, password=PASSWORD)
+
+    def _report_listing_as(self, reporter, *, follow=False):
+        self.client.force_login(reporter)
+        return self.client.post(
+            reverse("market:report_create") + f"?listing={self.listing.pk}",
+            {
+                "category": Report.Category.FRAUD,
+                "details": f"{reporter.username}의 독립적인 상품 신고",
+            },
+            follow=follow,
+        )
+
+    def _report_user_as(self, reporter, target, listing, *, follow=False):
+        conversation = Conversation.objects.create(
+            listing=listing,
+            buyer=reporter,
+            seller=target,
+        )
+        self.client.force_login(reporter)
+        response = self.client.post(
+            reverse("market:report_create") + f"?conversation={conversation.pk}",
+            {
+                "category": Report.Category.ABUSE,
+                "details": f"{reporter.username}의 독립적인 사용자 신고",
+            },
+            follow=follow,
+        )
+        return response, conversation
+
     def test_report_target_is_server_selected_and_duplicate_is_limited(self):
         self.client.force_login(self.bob)
         url = reverse("market:report_create") + f"?listing={self.listing.pk}"
@@ -897,6 +1135,141 @@ class ModerationSecurityTests(MarketTestCase):
         self.assertEqual(report.reporter, self.bob)
         self.assertEqual(report.listing, self.listing)
         self.assertIsNone(report.target_user)
+
+    def test_three_distinct_reporters_auto_block_listing_and_redirect_home(self):
+        mallory = self._reporter("listing-threshold-third")
+
+        first = self._report_listing_as(self.bob)
+        duplicate = self._report_listing_as(self.bob)
+        second = self._report_listing_as(self.eve)
+        self.listing.refresh_from_db()
+
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(second.status_code, 302)
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.assertEqual(
+            Report.objects.filter(listing=self.listing).values("reporter_id").distinct().count(),
+            2,
+        )
+
+        with self.assertLogs("tiny_market.security", level="WARNING"):
+            third = self._report_listing_as(mallory, follow=True)
+
+        self.listing.refresh_from_db()
+        self.assertEqual(third.status_code, 200)
+        self.assertEqual(third.redirect_chain, [(reverse("market:home"), 302)])
+        self.assertContains(third, "임시 비공개 처리했습니다")
+        self.assertNotContains(third, self.listing.title)
+        self.assertEqual(self.listing.status, Listing.Status.BLOCKED)
+        self.assertIsNone(self.listing.blocked_by)
+        self.assertEqual(self.listing.blocked_reason, AUTOMATIC_LISTING_BLOCK_REASON)
+        self.assertIsNotNone(self.listing.blocked_at)
+        self.assertEqual(
+            Report.objects.filter(listing=self.listing, status=Report.Status.OPEN)
+            .values("reporter_id")
+            .distinct()
+            .count(),
+            3,
+        )
+        self.assertEqual(
+            self.client.get(reverse("market:listing_detail", args=[self.listing.pk])).status_code,
+            404,
+        )
+
+    def test_three_distinct_user_reports_auto_suspend_and_keep_safe_redirect(self):
+        mallory = self._reporter("user-threshold-third")
+        # A self-authored row cannot be created by the web route and must not
+        # contribute to the automatic threshold even if inserted internally.
+        Report.objects.create(
+            reporter=self.alice,
+            target_user=self.alice,
+            category=Report.Category.OTHER,
+            details="자기 자신에 대한 내부 신고 행",
+        )
+
+        self._report_user_as(self.bob, self.alice, self.listing)
+        self._report_user_as(self.eve, self.alice, self.listing)
+        self.alice.refresh_from_db()
+        self.assertTrue(self.alice.is_active)
+        self.assertFalse(self.alice.is_suspended)
+
+        with self.assertLogs("tiny_market.security", level="WARNING"):
+            third, conversation = self._report_user_as(
+                mallory,
+                self.alice,
+                self.listing,
+                follow=True,
+            )
+
+        self.alice.refresh_from_db()
+        self.assertEqual(third.status_code, 200)
+        self.assertEqual(
+            third.redirect_chain,
+            [(reverse("market:conversation_detail", args=[conversation.pk]), 302)],
+        )
+        self.assertContains(third, "상대 계정을 임시 정지했습니다")
+        self.assertFalse(third.context["interaction_allowed"])
+        self.assertTrue(self.alice.is_suspended)
+        self.assertFalse(self.alice.is_active)
+        self.assertEqual(self.alice.suspension_reason, AUTOMATIC_USER_SUSPENSION_REASON)
+        self.assertIsNotNone(self.alice.suspended_at)
+        self.assertEqual(
+            Report.objects.filter(target_user=self.alice, status=Report.Status.OPEN)
+            .exclude(reporter=self.alice)
+            .values("reporter_id")
+            .distinct()
+            .count(),
+            3,
+        )
+
+    def test_automatic_user_threshold_never_suspends_staff_or_superuser(self):
+        mallory = self._reporter("protected-threshold-third")
+        protected_users = (
+            get_user_model().objects.create_user(
+                username="automatic-protected-staff",
+                password=PASSWORD,
+                is_staff=True,
+            ),
+            get_user_model().objects.create_superuser(
+                username="automatic-protected-superuser",
+                password=PASSWORD,
+            ),
+        )
+
+        for index, target in enumerate(protected_users):
+            with self.subTest(target=target.username):
+                listing = Listing.objects.create(
+                    seller=target,
+                    title=f"보호 계정 신고 상품 {index}",
+                    description="보호 계정 자동 정지 제외 검사",
+                    price_points=1_000,
+                    category=Listing.Category.OTHER,
+                    condition=Listing.Condition.GOOD,
+                    region="서울",
+                )
+                self._report_user_as(self.bob, target, listing)
+                self._report_user_as(self.eve, target, listing)
+                with self.assertLogs("tiny_market.security", level="WARNING"):
+                    response, conversation = self._report_user_as(
+                        mallory,
+                        target,
+                        listing,
+                        follow=True,
+                    )
+
+                target.refresh_from_db()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.redirect_chain,
+                    [(reverse("market:conversation_detail", args=[conversation.pk]), 302)],
+                )
+                self.assertTrue(target.is_active)
+                self.assertFalse(target.is_suspended)
+                self.assertEqual(
+                    Report.objects.filter(target_user=target, status=Report.Status.OPEN).count(),
+                    3,
+                )
 
     def test_listing_report_captures_exact_snapshot_and_image_sha256(self):
         with TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
@@ -1442,8 +1815,17 @@ class ModerationSecurityTests(MarketTestCase):
             "block_reported_listings",
             self.report_admin.get_actions(request),
         )
+        self.assertNotIn(
+            "restore_auto_blocked_listings",
+            self.report_admin.get_actions(request),
+        )
         with self.assertRaises(PermissionDenied):
             self.report_admin.block_reported_listings(
+                request,
+                Report.objects.filter(pk=report.pk),
+            )
+        with self.assertRaises(PermissionDenied):
+            self.report_admin.restore_auto_blocked_listings(
                 request,
                 Report.objects.filter(pk=report.pk),
             )
@@ -1505,6 +1887,72 @@ class ModerationSecurityTests(MarketTestCase):
         self.assertEqual(self.listing.status, Listing.Status.BLOCKED)
         self.assertEqual(self.listing.blocked_by, moderator)
         self.assertEqual(report.status, Report.Status.RESOLVED)
+
+    def test_authorized_admin_can_restore_only_automatic_listing_block(self):
+        mallory = self._reporter("restore-auto-third")
+        for reporter in (self.bob, self.eve, mallory):
+            self._report_listing_as(reporter)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.BLOCKED)
+        reports = Report.objects.filter(listing=self.listing)
+
+        moderator = self._moderator(
+            "automatic-block-reviewer",
+            ("market", "change_report"),
+            ("market", "block_listing"),
+        )
+        request = self._admin_request(moderator)
+        self.assertIn("restore_auto_blocked_listings", self.report_admin.get_actions(request))
+
+        with self.assertLogs("tiny_market.security", level="WARNING"):
+            self.report_admin.restore_auto_blocked_listings(request, reports)
+
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.assertIsNone(self.listing.blocked_by)
+        self.assertEqual(self.listing.blocked_reason, "")
+        self.assertIsNone(self.listing.blocked_at)
+        self.assertEqual(reports.filter(status=Report.Status.DISMISSED).count(), 3)
+        self.assertFalse(reports.filter(status=Report.Status.OPEN).exists())
+        self.assertFalse(reports.exclude(resolver=moderator).exists())
+
+    def test_restore_action_does_not_reopen_manually_blocked_listing(self):
+        moderator = self._moderator(
+            "manual-block-reviewer",
+            ("market", "change_report"),
+            ("market", "block_listing"),
+        )
+        report = Report.objects.create(
+            reporter=self.bob,
+            listing=self.listing,
+            category=Report.Category.PROHIBITED,
+            details="수동 차단은 자동 복구 대상이 아닙니다.",
+        )
+        self.listing.status = Listing.Status.BLOCKED
+        self.listing.blocked_by = moderator
+        self.listing.blocked_reason = "관리자 수동 차단"
+        self.listing.blocked_at = timezone.now()
+        self.listing.save(
+            update_fields=(
+                "status",
+                "blocked_by",
+                "blocked_reason",
+                "blocked_at",
+                "updated_at",
+            )
+        )
+
+        self.report_admin.restore_auto_blocked_listings(
+            self._admin_request(moderator),
+            Report.objects.filter(pk=report.pk),
+        )
+
+        self.listing.refresh_from_db()
+        report.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.BLOCKED)
+        self.assertEqual(self.listing.blocked_by, moderator)
+        self.assertEqual(self.listing.blocked_reason, "관리자 수동 차단")
+        self.assertEqual(report.status, Report.Status.OPEN)
 
     def test_user_suspend_action_requires_dedicated_suspend_permission(self):
         moderator = self._moderator(

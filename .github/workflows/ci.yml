@@ -52,7 +52,7 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
-          bandit -c pyproject.toml -r accounts config market
+          bandit -c pyproject.toml -r accounts community config market
 
       - name: Test with coverage
         run: |

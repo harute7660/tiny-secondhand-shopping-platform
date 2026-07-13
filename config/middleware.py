@@ -3,7 +3,16 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.core.exceptions import PermissionDenied, SuspiciousOperation
+from django.http import Http404, HttpRequest, HttpResponse
+
+from .views import (
+    bad_request,
+    page_not_found,
+    permission_denied,
+    security_logger,
+    server_error,
+)
 
 
 class TrustedProxyHeadersMiddleware:
@@ -62,3 +71,52 @@ class SecurityHeadersMiddleware:
         response.headers["Pragma"] = "no-cache"
 
         return response
+
+
+class SafeExceptionMiddleware:
+    """Turn view/template exceptions into non-diagnostic browser responses.
+
+    Django intentionally shows detailed exception pages while ``DEBUG`` is
+    enabled. That is useful on a developer-only machine, but unsafe for this
+    demonstrator because the browser may be shared during assessment. This
+    exception hook runs in both modes and never interpolates exception data,
+    request bodies, or filesystem paths into the response or security log.
+
+    Ordinary responses with a 4xx status are not touched. In particular, a
+    form or JSON view remains responsible for its own validation response.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = self.get_response(request)
+        if (
+            settings.DEBUG
+            and response.status_code == 404
+            and getattr(request, "resolver_match", None) is None
+        ):
+            # Resolver404 is raised before Django enters its view-exception
+            # hook. In DEBUG mode Django otherwise renders every URL pattern
+            # in the project. A resolved view's deliberate HTML/JSON 404 has a
+            # resolver_match and is therefore preserved unchanged.
+            return page_not_found(request, Http404())
+        return response
+
+    def process_exception(
+        self,
+        request: HttpRequest,
+        exception: Exception,
+    ) -> HttpResponse:
+        if isinstance(exception, Http404):
+            return page_not_found(request, exception)
+        if isinstance(exception, PermissionDenied):
+            return permission_denied(request, exception)
+        if isinstance(exception, SuspiciousOperation):
+            return bad_request(request, exception)
+
+        # Do not pass ``exception`` or request-controlled values to the logger.
+        # The event is still available for operational alerting without
+        # exposing passwords, tokens, local paths, or exception messages.
+        security_logger.error("unhandled_request_exception")
+        return server_error(request)

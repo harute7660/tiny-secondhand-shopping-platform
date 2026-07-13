@@ -15,7 +15,7 @@ from django.utils import timezone
 from market.models import WalletAccount
 
 from .admin import LoginAttemptAdmin, UserAdmin, UserBlockAdmin
-from .forms import LoginForm
+from .forms import LoginForm, ProfileForm
 from .models import LoginAttempt, UserBlock
 from .views import (
     LOGIN_ATTEMPT_RETENTION,
@@ -1008,4 +1008,271 @@ class UserAdminPrivilegeBoundaryTests(TestCase):
         self.assertEqual(
             int(self.client.session["_auth_user_id"]),
             self.ordinary.pk,
+        )
+
+
+class PublicProfileSecurityTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="alice",
+            password=PASSWORD,
+            email="private-email-token@example.invalid",
+            bio="안전한 거래를 좋아합니다.",
+        )
+
+    def test_active_ordinary_profile_is_public_and_allowlisted(self):
+        get_user_model().objects.filter(pk=self.user.pk).update(
+            suspension_reason="private-suspension-token",
+        )
+
+        response = self.client.get(
+            reverse("accounts:public_profile", args=["ALICE"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["profile"],
+            {
+                "username": "alice",
+                "bio": "안전한 거래를 좋아합니다.",
+            },
+        )
+        self.assertContains(response, "alice")
+        self.assertContains(response, "안전한 거래를 좋아합니다.")
+        self.assertNotContains(response, "private-email-token")
+        self.assertNotContains(response, "private-suspension-token")
+        self.assertNotContains(response, "is_staff")
+        self.assertNotContains(response, "is_superuser")
+        self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_profile_bio_is_html_escaped(self):
+        self.user.bio = '<script>alert("profile-xss")</script>\n다음 줄'
+        self.user.save(update_fields=("bio",))
+
+        response = self.client.get(
+            reverse("accounts:public_profile", args=[self.user.username]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "<script>")
+        self.assertContains(response, "&lt;script&gt;")
+        self.assertContains(response, "다음 줄")
+
+    def test_unavailable_and_privileged_accounts_have_no_public_profile(self):
+        inactive = get_user_model().objects.create_user(
+            username="inactive",
+            password=PASSWORD,
+            is_active=False,
+        )
+        suspended = get_user_model().objects.create_user(
+            username="suspended",
+            password=PASSWORD,
+        )
+        suspended.is_suspended = True
+        suspended.suspension_reason = "private reason"
+        suspended.save(update_fields=("is_suspended", "suspension_reason"))
+        staff = get_user_model().objects.create_user(
+            username="staff",
+            password=PASSWORD,
+            is_staff=True,
+        )
+        superuser = get_user_model().objects.create_superuser(
+            username="root",
+            password=PASSWORD,
+        )
+
+        for hidden_user in (inactive, suspended, staff, superuser):
+            with self.subTest(username=hidden_user.username):
+                response = self.client.get(
+                    reverse(
+                        "accounts:public_profile",
+                        args=[hidden_user.username],
+                    ),
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_public_profile_is_read_only(self):
+        response = self.client.post(
+            reverse("accounts:public_profile", args=[self.user.username]),
+            {"bio": "forged"},
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.bio, "안전한 거래를 좋아합니다.")
+
+
+class MyPageSecurityTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="alice",
+            password=PASSWORD,
+            email="original@example.invalid",
+            bio="기존 소개글",
+        )
+        self.client.force_login(self.user)
+
+    def test_mypage_requires_authentication_and_is_not_cached(self):
+        response = self.client.get(reverse("accounts:mypage"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.context["profile_form"], ProfileForm)
+        self.assertIn("no-store", response.headers["Cache-Control"])
+
+        self.client.logout()
+        response = self.client.get(reverse("accounts:mypage"))
+        self.assertRedirects(
+            response,
+            f"{reverse('accounts:login')}?next={reverse('accounts:mypage')}",
+        )
+
+    def test_profile_update_uses_an_explicit_field_allowlist(self):
+        response = self.client.post(
+            reverse("accounts:mypage"),
+            {
+                "bio": "변경된 소개글",
+                "username": "attacker-controlled",
+                "email": "attacker@example.invalid",
+                "is_active": "",
+                "is_staff": "on",
+                "is_superuser": "on",
+                "is_suspended": "on",
+                "suspension_reason": "forged reason",
+            },
+        )
+
+        self.assertRedirects(response, reverse("accounts:mypage"))
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.bio, "변경된 소개글")
+        self.assertEqual(self.user.username, "alice")
+        self.assertEqual(self.user.email, "original@example.invalid")
+        self.assertTrue(self.user.is_active)
+        self.assertFalse(self.user.is_staff)
+        self.assertFalse(self.user.is_superuser)
+        self.assertFalse(self.user.is_suspended)
+        self.assertEqual(self.user.suspension_reason, "")
+
+    def test_profile_update_rejects_more_than_500_characters(self):
+        response = self.client.post(
+            reverse("accounts:mypage"),
+            {"bio": "가" * 501},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.context["profile_form"].errors)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.bio, "기존 소개글")
+
+    def test_password_change_requires_the_current_password(self):
+        response = self.client.post(
+            reverse("accounts:password_change"),
+            {
+                "old_password": "wrong-current-password",
+                "new_password1": NEW_PASSWORD,
+                "new_password2": NEW_PASSWORD,
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(PASSWORD))
+        self.assertFalse(self.user.check_password(NEW_PASSWORD))
+
+    def test_password_change_applies_configured_strength_validators(self):
+        response = self.client.post(
+            reverse("accounts:password_change"),
+            {
+                "old_password": PASSWORD,
+                "new_password1": "short",
+                "new_password2": "short",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(PASSWORD))
+
+    def test_password_change_rejects_oversized_input_before_hashing(self):
+        with patch("accounts.views.PasswordChangeForm.is_valid") as is_valid:
+            response = self.client.post(
+                reverse("accounts:password_change"),
+                {
+                    "old_password": "x" * 257,
+                    "new_password1": NEW_PASSWORD,
+                    "new_password2": NEW_PASSWORD,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        is_valid.assert_not_called()
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(PASSWORD))
+
+    def test_password_change_is_rate_limited_before_form_validation(self):
+        post_data = {
+            "old_password": "wrong-current-password",
+            "new_password1": NEW_PASSWORD,
+            "new_password2": NEW_PASSWORD,
+        }
+        with patch(
+            "accounts.views.PasswordChangeForm.is_valid",
+            return_value=False,
+        ) as is_valid:
+            for _index in range(10):
+                response = self.client.post(
+                    reverse("accounts:password_change"),
+                    post_data,
+                )
+                self.assertEqual(response.status_code, 400)
+
+            response = self.client.post(
+                reverse("accounts:password_change"),
+                post_data,
+            )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers["Retry-After"], "3600")
+        self.assertEqual(is_valid.call_count, 10)
+
+    def test_successful_password_change_preserves_authenticated_session(self):
+        old_session_key = self.client.session.session_key
+
+        response = self.client.post(
+            reverse("accounts:password_change"),
+            {
+                "old_password": PASSWORD,
+                "new_password1": NEW_PASSWORD,
+                "new_password2": NEW_PASSWORD,
+            },
+        )
+
+        self.assertRedirects(response, reverse("accounts:mypage"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(NEW_PASSWORD))
+        self.assertFalse(self.user.check_password(PASSWORD))
+        self.assertEqual(
+            int(self.client.session["_auth_user_id"]),
+            self.user.pk,
+        )
+        self.assertNotEqual(self.client.session.session_key, old_session_key)
+        self.assertEqual(
+            self.client.get(reverse("accounts:mypage")).status_code,
+            200,
+        )
+
+    def test_password_endpoint_rejects_get(self):
+        response = self.client.get(reverse("accounts:password_change"))
+
+        self.assertEqual(response.status_code, 405)
+
+    def test_account_that_becomes_suspended_cannot_use_mypage(self):
+        self.user.is_suspended = True
+        self.user.suspension_reason = "policy violation"
+        self.user.save(update_fields=("is_suspended", "suspension_reason"))
+
+        response = self.client.get(reverse("accounts:mypage"))
+
+        self.assertRedirects(
+            response,
+            f"{reverse('accounts:login')}?next={reverse('accounts:mypage')}",
         )

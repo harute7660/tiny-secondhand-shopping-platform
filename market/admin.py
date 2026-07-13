@@ -15,6 +15,7 @@ from django.utils.html import format_html
 
 from .forms import ListingForm
 from .models import (
+    AUTOMATIC_LISTING_BLOCK_REASON,
     Conversation,
     Favorite,
     LedgerEntry,
@@ -220,7 +221,12 @@ class ReportAdmin(admin.ModelAdmin):
         "resolved_at",
     )
     list_select_related = ("reporter", "target_user", "listing", "resolver")
-    actions = ("resolve_reports", "block_reported_listings", "suspend_reported_users")
+    actions = (
+        "resolve_reports",
+        "block_reported_listings",
+        "restore_auto_blocked_listings",
+        "suspend_reported_users",
+    )
 
     def has_add_permission(self, request):
         return False
@@ -291,6 +297,7 @@ class ReportAdmin(admin.ModelAdmin):
         actions = super().get_actions(request)
         if not request.user.has_perm("market.block_listing"):
             actions.pop("block_reported_listings", None)
+            actions.pop("restore_auto_blocked_listings", None)
         if not request.user.has_perm("accounts.suspend_user"):
             actions.pop("suspend_reported_users", None)
         return actions
@@ -378,6 +385,64 @@ class ReportAdmin(admin.ModelAdmin):
                 self.log_change(request, report, "판매글 차단 후 신고를 처리했습니다.")
                 count += 1
         self.message_user(request, f"판매글 {count}건을 차단했습니다.", messages.SUCCESS)
+
+    @admin.action(
+        description="자동 신고 임계치로 차단된 판매글을 복구하고 신고를 기각",
+        permissions=["change"],
+    )
+    def restore_auto_blocked_listings(self, request, queryset):
+        self._require_action_permissions(request, "market.block_listing")
+        restored_at = timezone.now()
+        selected_listing_ids = tuple(
+            queryset.filter(listing__isnull=False).values_list("listing_id", flat=True).distinct()
+        )
+        count = 0
+        with transaction.atomic():
+            listings = Listing.objects.select_for_update().filter(
+                pk__in=selected_listing_ids,
+                status=Listing.Status.BLOCKED,
+                blocked_by__isnull=True,
+                blocked_reason=AUTOMATIC_LISTING_BLOCK_REASON,
+            )
+            for listing in listings:
+                listing.status = Listing.Status.ACTIVE
+                listing.blocked_by = None
+                listing.blocked_reason = ""
+                listing.blocked_at = None
+                listing.save(
+                    update_fields=(
+                        "status",
+                        "blocked_by",
+                        "blocked_reason",
+                        "blocked_at",
+                        "updated_at",
+                    )
+                )
+                dismissed_count = 0
+                reports = Report.objects.select_for_update().filter(
+                    listing=listing,
+                    status=Report.Status.OPEN,
+                )
+                for report in reports:
+                    report.status = Report.Status.DISMISSED
+                    report.resolver = request.user
+                    report.resolved_at = restored_at
+                    report.save(update_fields=("status", "resolver", "resolved_at", "updated_at"))
+                    self.log_change(
+                        request,
+                        report,
+                        "자동 차단 복구 검토에 따라 신고를 기각했습니다.",
+                    )
+                    dismissed_count += 1
+                self.log_change(request, listing, "자동 신고 임계치 차단을 복구했습니다.")
+                security_logger.warning(
+                    "automatic_listing_restored actor=%s listing=%s dismissed_reports=%s",
+                    request.user.pk,
+                    listing.pk,
+                    dismissed_count,
+                )
+                count += 1
+        self.message_user(request, f"자동 차단 판매글 {count}건을 복구했습니다.", messages.SUCCESS)
 
     @admin.action(
         description="신고된 사용자를 정지하고 신고 처리",

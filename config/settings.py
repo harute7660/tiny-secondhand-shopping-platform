@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "accounts.apps.AccountsConfig",
+    "community.apps.CommunityConfig",
     "market.apps.MarketConfig",
 ]
 
@@ -90,6 +91,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "config.middleware.SecurityHeadersMiddleware",
+    "config.middleware.SafeExceptionMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

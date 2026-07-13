@@ -23,7 +23,15 @@ from accounts.models import UserBlock
 
 from .forms import ListingForm, MessageForm, ReportForm, TransferForm
 from .models import Conversation, Favorite, LedgerEntry, Listing, Message, Report, Transfer
-from .services import MarketServiceError, can_users_interact, ensure_wallet, transfer_points
+from .services import (
+    AUTOMATIC_LISTING_BLOCKED,
+    AUTOMATIC_USER_SUSPENDED,
+    MarketServiceError,
+    apply_automatic_report_threshold,
+    can_users_interact,
+    ensure_wallet,
+    transfer_points,
+)
 from .storage import delete_listing_image_unless_evidence
 
 security_logger = logging.getLogger("tiny_market.security")
@@ -218,6 +226,24 @@ def home(request: HttpRequest) -> HttpResponse:
     )
 
 
+@login_required
+@never_cache
+@require_GET
+def my_listings(request: HttpRequest) -> HttpResponse:
+    listings = (
+        Listing.objects.filter(seller=request.user)
+        .exclude(status=Listing.Status.DELETED)
+        .select_related("blocked_by")
+        .order_by("-created_at")
+    )
+    page_obj = Paginator(listings, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "market/my_listings.html",
+        {"listings": page_obj.object_list, "page_obj": page_obj},
+    )
+
+
 @require_GET
 def listing_detail(request: HttpRequest, pk) -> HttpResponse:
     listing = _detail_listing(request, pk)
@@ -341,12 +367,18 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
                     "category",
                     "condition",
                     "region",
-                    "image",
                 )
                 for field_name in editable_fields:
                     setattr(locked, field_name, form.cleaned_data[field_name])
+                # ClearableFileInput represents an explicit deletion as False.
+                # Delegate normalization to Django's FileField instead of ever
+                # assigning the boolean sentinel to the model descriptor.
+                Listing._meta.get_field("image").save_form_data(
+                    locked,
+                    form.cleaned_data["image"],
+                )
                 locked.full_clean(exclude=("seller", "status"))
-                locked.save(update_fields=(*editable_fields, "updated_at"))
+                locked.save(update_fields=(*editable_fields, "image", "updated_at"))
                 new_image_name = locked.image.name if locked.image else ""
                 if old_image_name and old_image_name != new_image_name:
                     transaction.on_commit(
@@ -664,13 +696,16 @@ def report_create(request: HttpRequest) -> HttpResponse:
     if request.method == "POST" and form.is_valid():
         report = None
         form_error = None
+        moderation_outcome = None
         try:
             with transaction.atomic():
                 # Serialize a reporter's duplicate/daily-limit checks and, for
                 # listing reports, serialize the evidence snapshot against
-                # seller edits and deletion.
-                get_user_model().objects.select_for_update().get(pk=request.user.pk)
+                # seller edits and deletion. User-report pairs are locked in
+                # primary-key order to avoid A-reports-B/B-reports-A deadlocks.
+                user_model = get_user_model()
                 if target_listing is not None:
+                    user_model.objects.select_for_update().get(pk=request.user.pk)
                     target_listing = get_object_or_404(
                         Listing.objects.select_for_update().select_related("seller"),
                         pk=target_listing.pk,
@@ -679,6 +714,17 @@ def report_create(request: HttpRequest) -> HttpResponse:
                         seller__is_suspended=False,
                     )
                     duplicate_filter = {"listing": target_listing}
+                else:
+                    locked_users = {
+                        user.pk: user
+                        for user in user_model.objects.select_for_update()
+                        .filter(pk__in=(request.user.pk, target_user.pk))
+                        .order_by("pk")
+                    }
+                    target_user = locked_users.get(target_user.pk)
+                    if target_user is None:
+                        raise Http404
+                    duplicate_filter = {"target_user": target_user}
 
                 if Report.objects.filter(
                     reporter=request.user,
@@ -703,6 +749,7 @@ def report_create(request: HttpRequest) -> HttpResponse:
                         _capture_listing_snapshot(report, target_listing)
                     report.full_clean()
                     report.save()
+                    moderation_outcome = apply_automatic_report_threshold(report)
         except IntegrityError:
             form_error = "이미 검토 중인 신고가 있습니다."
 
@@ -711,6 +758,17 @@ def report_create(request: HttpRequest) -> HttpResponse:
         elif report is not None:
             security_logger.info("report_created actor=%s report=%s", request.user.pk, report.pk)
             messages.success(request, "신고가 접수되었습니다. 관리자가 검토합니다.")
+            if moderation_outcome == AUTOMATIC_LISTING_BLOCKED:
+                messages.warning(
+                    request,
+                    "여러 사용자의 신고가 확인되어 해당 상품을 임시 비공개 처리했습니다.",
+                )
+                return redirect("market:home")
+            if moderation_outcome == AUTOMATIC_USER_SUSPENDED:
+                messages.warning(
+                    request,
+                    "여러 사용자의 신고가 확인되어 상대 계정을 임시 정지했습니다.",
+                )
             return (
                 redirect("market:listing_detail", pk=target_listing.pk)
                 if target_listing

@@ -6,20 +6,23 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import PasswordChangeForm
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from .forms import GENERIC_LOGIN_ERROR, LoginForm, SignupForm
+from .forms import GENERIC_LOGIN_ERROR, LoginForm, ProfileForm, SignupForm
 from .models import LoginAttempt, User
 
 ACCOUNT_LOGIN_ATTEMPT_LIMIT = 5
@@ -29,6 +32,8 @@ LOGIN_ATTEMPT_RETENTION = timedelta(minutes=30)
 SIGNUP_LIMIT = 5
 SIGNUP_ATTEMPT_LIMIT = 20
 SIGNUP_WINDOW_SECONDS = 60 * 60
+PASSWORD_CHANGE_ATTEMPT_LIMIT = 10
+PASSWORD_CHANGE_WINDOW_SECONDS = 60 * 60
 MAX_PASSWORD_INPUT_LENGTH = 256
 security_logger = logging.getLogger("tiny_market.security")
 
@@ -257,6 +262,18 @@ def _consume_network_limit(request, action, limit, timeout):
         return cache.add(cache_key, 1, timeout=timeout)
 
 
+def _consume_user_limit(user_id, action, limit, timeout):
+    """Atomically rate-limit an authenticated action without a raw user ID key."""
+    key = _key_hash(action, str(user_id))
+    cache_key = f"tiny-market:{action}:{key}"
+    if cache.add(cache_key, 1, timeout=timeout):
+        return True
+    try:
+        return cache.incr(cache_key) <= limit
+    except ValueError:
+        return cache.add(cache_key, 1, timeout=timeout)
+
+
 @sensitive_post_parameters("password1", "password2")
 @never_cache
 @csrf_protect
@@ -444,3 +461,128 @@ def logout_view(request):
     security_logger.info("logout actor=%s", actor_id)
     messages.info(request, "로그아웃되었습니다.")
     return redirect("market:home")
+
+
+def _inactive_session_response(request):
+    """End a stale session if an account became unusable after login."""
+    if request.user.is_active and not request.user.is_suspended:
+        return None
+    actor_id = request.user.pk
+    auth_logout(request)
+    security_logger.warning("inactive_account_session_rejected actor=%s", actor_id)
+    return redirect("accounts:login")
+
+
+def _render_mypage(request, *, profile_form, password_form, status=200):
+    return render(
+        request,
+        "accounts/mypage.html",
+        {
+            "profile_form": profile_form,
+            "password_form": password_form,
+        },
+        status=status,
+    )
+
+
+@never_cache
+@require_GET
+def public_profile_view(request, username):
+    """Show the allowlisted public fields of an active ordinary account."""
+    normalized_username = User.normalize_username_value(username)
+    profile_user = get_object_or_404(
+        User.objects.filter(
+            is_active=True,
+            is_suspended=False,
+            is_staff=False,
+            is_superuser=False,
+        ).only("username", "bio"),
+        username=normalized_username,
+    )
+    # Pass primitives rather than the User object so future template changes
+    # cannot accidentally disclose email, privilege, or suspension metadata.
+    profile = {
+        "username": profile_user.username,
+        "bio": profile_user.bio,
+    }
+    return render(request, "accounts/public_profile.html", {"profile": profile})
+
+
+@login_required
+@never_cache
+@csrf_protect
+@require_http_methods(["GET", "POST"])
+def mypage_view(request):
+    stale_session_response = _inactive_session_response(request)
+    if stale_session_response is not None:
+        return stale_session_response
+
+    profile_form = ProfileForm(request.POST or None, instance=request.user)
+    if request.method == "POST" and profile_form.is_valid():
+        # Save only the allowlisted field to avoid stale or forged account-state
+        # values being persisted with the profile update.
+        request.user.bio = profile_form.cleaned_data["bio"]
+        request.user.save(update_fields=("bio",))
+        security_logger.info("profile_updated actor=%s", request.user.pk)
+        messages.success(request, "소개글을 변경했습니다.")
+        return redirect("accounts:mypage")
+
+    return _render_mypage(
+        request,
+        profile_form=profile_form,
+        password_form=PasswordChangeForm(user=request.user),
+        status=400 if request.method == "POST" else 200,
+    )
+
+
+@sensitive_post_parameters("old_password", "new_password1", "new_password2")
+@login_required
+@never_cache
+@csrf_protect
+@require_POST
+def password_change_view(request):
+    stale_session_response = _inactive_session_response(request)
+    if stale_session_response is not None:
+        return stale_session_response
+
+    if not _consume_user_limit(
+        request.user.pk,
+        "password-change-attempt",
+        PASSWORD_CHANGE_ATTEMPT_LIMIT,
+        PASSWORD_CHANGE_WINDOW_SECONDS,
+    ):
+        security_logger.warning("password_change_rate_limited actor=%s", request.user.pk)
+        response = HttpResponse(
+            "비밀번호 변경 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+            status=429,
+            content_type="text/plain; charset=utf-8",
+        )
+        response.headers["Retry-After"] = str(PASSWORD_CHANGE_WINDOW_SECONDS)
+        return response
+
+    password_fields = ("old_password", "new_password1", "new_password2")
+    if any(
+        len(request.POST.get(field_name, "")) > MAX_PASSWORD_INPUT_LENGTH
+        for field_name in password_fields
+    ):
+        security_logger.warning("password_change_input_rejected actor=%s", request.user.pk)
+        return HttpResponse(
+            "비밀번호 입력값을 확인해 주세요.",
+            status=400,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    password_form = PasswordChangeForm(user=request.user, data=request.POST)
+    if password_form.is_valid():
+        user = password_form.save()
+        update_session_auth_hash(request, user)
+        security_logger.info("password_changed actor=%s", user.pk)
+        messages.success(request, "비밀번호를 안전하게 변경했습니다.")
+        return redirect("accounts:mypage")
+
+    return _render_mypage(
+        request,
+        profile_form=ProfileForm(instance=request.user),
+        password_form=password_form,
+        status=400,
+    )

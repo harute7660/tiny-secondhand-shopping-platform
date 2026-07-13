@@ -1,3 +1,4 @@
+import logging
 import uuid
 import warnings
 from io import BytesIO
@@ -8,9 +9,20 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
+from django.utils import timezone
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .models import MAX_TRANSFER_POINTS, LedgerEntry, Listing, Transfer, WalletAccount
+from .models import (
+    AUTOMATIC_LISTING_BLOCK_REASON,
+    AUTOMATIC_REPORT_THRESHOLD,
+    AUTOMATIC_USER_SUSPENSION_REASON,
+    MAX_TRANSFER_POINTS,
+    LedgerEntry,
+    Listing,
+    Report,
+    Transfer,
+    WalletAccount,
+)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 12_000_000
@@ -19,6 +31,10 @@ ALLOWED_IMAGE_MIME_TYPES = {
     "PNG": {"image/png"},
     "WEBP": {"image/webp"},
 }
+AUTOMATIC_LISTING_BLOCKED = "listing_blocked"
+AUTOMATIC_USER_SUSPENDED = "user_suspended"
+AUTOMATIC_PROTECTED_USER_SKIPPED = "protected_user_skipped"
+security_logger = logging.getLogger("tiny_market.security")
 
 
 class MarketServiceError(ValidationError):
@@ -267,6 +283,91 @@ def can_users_interact(user_a, user_b, listing=None):
     if listing.status in {Listing.Status.BLOCKED, Listing.Status.DELETED}:
         return False
     return listing.seller_id in {user_a.pk, user_b.pk}
+
+
+def apply_automatic_report_threshold(report):
+    """Apply the three-distinct-reporter rule inside the caller's transaction."""
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("신고 임계치 처리는 원자적 트랜잭션 안에서 실행해야 합니다.")
+    if report.status != Report.Status.OPEN:
+        return None
+
+    now = timezone.now()
+    if report.listing_id:
+        listing = Listing.objects.select_for_update().get(pk=report.listing_id)
+        distinct_reporters = (
+            Report.objects.filter(listing_id=listing.pk, status=Report.Status.OPEN)
+            .exclude(reporter_id=listing.seller_id)
+            .values("reporter_id")
+            .distinct()
+            .count()
+        )
+        if distinct_reporters < AUTOMATIC_REPORT_THRESHOLD:
+            return None
+        if listing.status in {Listing.Status.BLOCKED, Listing.Status.DELETED}:
+            return None
+
+        listing.status = Listing.Status.BLOCKED
+        listing.blocked_by = None
+        listing.blocked_reason = AUTOMATIC_LISTING_BLOCK_REASON
+        listing.blocked_at = now
+        listing.save(
+            update_fields=(
+                "status",
+                "blocked_by",
+                "blocked_reason",
+                "blocked_at",
+                "updated_at",
+            )
+        )
+        security_logger.warning(
+            "automatic_listing_blocked listing=%s trigger_report=%s distinct_reporters=%s",
+            listing.pk,
+            report.pk,
+            distinct_reporters,
+        )
+        return AUTOMATIC_LISTING_BLOCKED
+
+    user_model = get_user_model()
+    target = user_model.objects.select_for_update().get(pk=report.target_user_id)
+    distinct_reporters = (
+        Report.objects.filter(target_user_id=target.pk, status=Report.Status.OPEN)
+        .exclude(reporter_id=target.pk)
+        .values("reporter_id")
+        .distinct()
+        .count()
+    )
+    if distinct_reporters < AUTOMATIC_REPORT_THRESHOLD:
+        return None
+    if target.pk == report.reporter_id or target.is_staff or target.is_superuser:
+        security_logger.warning(
+            "automatic_user_suspension_skipped target=%s trigger_report=%s protected=true",
+            target.pk,
+            report.pk,
+        )
+        return AUTOMATIC_PROTECTED_USER_SKIPPED
+    if target.is_suspended or not target.is_active:
+        return None
+
+    target.is_active = False
+    target.is_suspended = True
+    target.suspension_reason = AUTOMATIC_USER_SUSPENSION_REASON
+    target.suspended_at = now
+    target.save(
+        update_fields=(
+            "is_active",
+            "is_suspended",
+            "suspension_reason",
+            "suspended_at",
+        )
+    )
+    security_logger.warning(
+        "automatic_user_suspended target=%s trigger_report=%s distinct_reporters=%s",
+        target.pk,
+        report.pk,
+        distinct_reporters,
+    )
+    return AUTOMATIC_USER_SUSPENDED
 
 
 def process_listing_image(uploaded_file):

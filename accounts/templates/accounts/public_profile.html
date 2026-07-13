@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{{ profile.username }} 프로필 · TINY MARKET{% endblock %}
+{% block body_class %}form-page{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-compact" aria-labelledby="profile-title">
+  <div class="shell">
+    <nav class="breadcrumbs" aria-label="현재 위치">
+      <a href="{% url 'market:home' %}">홈</a><span aria-hidden="true">/</span>
+      <span aria-current="page">회원 프로필</span>
+    </nav>
+    <p class="eyebrow eyebrow-light">MEMBER PROFILE</p>
+    <h1 id="profile-title">{{ profile.username }}</h1>
+    <p>회원이 직접 작성한 공개 소개글입니다.</p>
+  </div>
+</section>
+
+<section class="shell form-layout">
+  <article class="form-card form-card-wide" aria-labelledby="bio-title">
+    <div class="form-card-heading">
+      <span class="step-badge" aria-hidden="true">01</span>
+      <div><h2 id="bio-title">소개글</h2><p>공개된 정보만 표시합니다.</p></div>
+    </div>
+    {% if profile.bio %}
+      <p>{{ profile.bio|linebreaksbr }}</p>
+    {% else %}
+      <p>아직 작성된 소개글이 없습니다.</p>
+    {% endif %}
+  </article>
+
+  <aside class="form-aside" aria-label="프로필 개인정보 안내">
+    <div class="tip-card">
+      <span class="tip-number" aria-hidden="true">i</span>
+      <h2>공개 범위</h2>
+      <p>이 화면에는 사용자명과 소개글만 표시하며 이메일과 계정 권한 정보는 공개하지 않습니다.</p>
+    </div>
+  </aside>
+</section>
+{% endblock %}

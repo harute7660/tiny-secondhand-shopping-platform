@@ -7,7 +7,7 @@
 - 구현단계 기준: 7개 영역, 49개 보안약점
 - Python 가이드 상세 설명 제외 3개: 메모리 버퍼 오버플로우, 해제된 자원 사용, 초기화되지 않은 변수 사용
 
-`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지의 최소 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. 단, 2026-07-13 발견한 SEC-031·032로 인해 에러처리 통제는 수정·재검증 전이며 아래 과거 자동검사 수치만으로 완료 판정하지 않는다.
+`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. 2026-07-13 발견한 SEC-031·032를 수정하고 표적 회귀에 이어 전체 168개, coverage 94%, 정적·공급망·deploy 검사를 통과했다.
 
 ## 1. 입력데이터 검증 및 표현 - 17개
 
@@ -16,7 +16,7 @@
 | 1 | SQL 삽입 | A | Django ORM, raw SQL 금지, 정렬 허용목록 | SQLi 테스트·정적 검색 |
 | 2 | 코드 삽입 | N/A | `eval/exec/compile` 금지 | 금지 API 검색 |
 | 3 | 경로 조작 및 자원 삽입 | A | 요청 파일명을 버리고 UUID JPEG 경로 사용, commit 후 교체·삭제 정리 | 위장 파일·직접 접근·파일 삭제 테스트 |
-| 4 | 크로스사이트 스크립트 | A | autoescape, HTML 입력 금지, `safe` 금지 | 저장형·반사형 XSS |
+| 4 | 크로스사이트 스크립트 | A | template autoescape, HTML 입력 금지, `safe` 금지, 전체 채팅 DOM은 `textContent`로만 생성 | 상품·프로필·채팅 저장형 및 검색 반사형 XSS |
 | 5 | 운영체제 명령어 삽입 | N/A | 셸·subprocess 호출 금지 | 금지 API 검색 |
 | 6 | 위험한 형식 파일 업로드 | A | JPEG·PNG·WebP 디코딩, 5MB·12MP·단일 프레임 상한, JPEG 재인코딩 | 정상·위장·대용량 이미지 테스트 |
 | 7 | 신뢰되지 않은 URL 자동접속 | A | named URL, 외부 `next` 검증 | 오픈 리다이렉트 테스트 |
@@ -26,8 +26,8 @@
 | 11 | 크로스사이트 요청 위조 | A | CSRF middleware, POST 변경, `csrf_exempt` 금지 | 강제 CSRF 테스트 |
 | 12 | 서버사이드 요청 위조 | N/A | 사용자 URL 서버 호출 기능 없음 | HTTP 호출 데이터 흐름 검색 |
 | 13 | HTTP 응답분할 | A | 헤더 고정, CR/LF 거부 | `%0d%0a` 테스트 |
-| 14 | 정수형 오버플로우 | A | 가격·페이지·크기·가입·상품·메시지·신고 상한, DB 제약 | 경계값·quota/rate 테스트 |
-| 15 | 보안기능 결정의 부적절한 입력값 | A | 사용자·발신자는 세션, 신고·차단 대상은 참여 대화, Admin은 대상 모델 권한 재검사 | Mass Assignment·열거·forged Admin POST 테스트 |
+| 14 | 정수형 오버플로우 | A | 가격·페이지·크기·가입·상품·소개글·채팅·신고 상한, DB 제약 | 경계값·quota/rate 테스트 |
+| 15 | 보안기능 결정의 부적절한 입력값 | A | 사용자·발신자는 세션, 신고·차단 대상은 참여 대화, 프로필 필드 allowlist, Admin은 대상 모델 권한 재검사 | Mass Assignment·sender 위조·열거·forged Admin POST 테스트 |
 | 16 | 메모리 버퍼 오버플로우 | N/A | 자체 C 확장 없음 | FFI·바이너리 확장 검색 |
 | 17 | 포맷 스트링 삽입 | A | 포맷 문자열은 코드 상수, 입력은 값 인자 | 사용자 제어 format 검색 |
 
@@ -35,7 +35,7 @@
 
 | 번호 | 항목 | 판정 | 핵심 통제 | 검증 |
 |---:|---|:---:|---|---|
-| 1 | 적절한 인증 없는 중요 기능 허용 | A | 중요 기능 로그인 강제, 일반·Admin 로그인 반복시도 제한 | 익명 URL·Admin throttle 테스트 |
+| 1 | 적절한 인증 없는 중요 기능 허용 | A | 마이페이지·비밀번호·내 상품·대화·전체 채팅·송금 로그인 강제, 일반·Admin 로그인 반복시도 제한 | 익명 URL·비밀번호 current-password·Admin throttle 테스트 |
 | 2 | 부적절한 인가 | A | 소유자·대화 참여자·`view_listing`·교차 모델 change 권한, 보호 계정 | IDOR·staff view·forged Admin POST 테스트 |
 | 3 | 중요한 자원의 잘못된 권한 설정 | A | `.env`·DB·미디어 최소권한, 원장 ORM 불변성, CI 최소 권한 | 원장 변경 거부·workflow 권한 검토 |
 | 4 | 취약한 암호화 알고리즘 사용 | A | 자체 암호 금지, Django 표준 사용 | 취약 알고리즘 검색 |
@@ -43,7 +43,7 @@
 | 6 | 하드코드된 중요정보 | A | 환경변수, `.env` 제외, GitHub Actions commit SHA 고정 | 시크릿·workflow pin 검사 |
 | 7 | 충분하지 않은 키 길이 | A | 충분한 엔트로피의 SECRET_KEY | 설정 검증 |
 | 8 | 적절하지 않은 난수값 | A | `secrets`, Django 토큰, UUID4 | 보안 흐름 `random` 검색 |
-| 9 | 취약한 비밀번호 허용 | A | Django validators, 길이·흔한 값 제한 | 약한 비밀번호 테스트 |
+| 9 | 취약한 비밀번호 허용 | A | 가입·변경 모두 Django validators, 현재 비밀번호 확인, 길이·흔한 값 제한, 변경 시도·입력 크기 제한 | 약한 비밀번호·변경 current password·oversized/rate 테스트 |
 | 10 | 부적절한 전자서명 확인 | N/A | 전자서명·웹훅·결제 없음 | 기능·코드 부재 확인 |
 | 11 | 부적절한 인증서 유효성 검증 | N/A | 외부 TLS 요청 기능 없음, 향후 추가 시 검증 비활성화 금지 | `verify=False`·HTTP 클라이언트 검색 |
 | 12 | 쿠키를 통한 정보노출 | A | 세션 ID만 저장, Secure·HttpOnly·SameSite, POST 로그아웃·no-store | 쿠키·세션·로그아웃 테스트 |
@@ -56,15 +56,15 @@
 
 | 번호 | 항목 | 판정 | 핵심 통제 | 검증 |
 |---:|---|:---:|---|---|
-| 1 | 경쟁조건: 검사시점과 사용시점 | A | 조건부 지갑 차감, append-only 원장, 상품 row lock·현재 상태 재검증, 허용 상태 전이 | 중복키·stale update·상태 전이 테스트 |
-| 2 | 종료되지 않는 반복문·재귀함수 | A | 상품·대화 페이지, 가입·콘텐츠 quota/rate, 업로드 상한 | 대형 입력·quota·pagination 테스트 |
+| 1 | 경쟁조건: 검사시점과 사용시점 | A | 조건부 지갑 차감, append-only 원장, 상품·신고 대상 row lock·현재 상태 재검증, 원자적 3인 신고 임계치 | 중복키·stale update·상태 전이·자동조치 테스트 |
+| 2 | 종료되지 않는 반복문·재귀함수 | A | 상품·대화 페이지, 가입·콘텐츠 quota/rate, 업로드 상한, 전체 채팅 증분 100건·hidden 중단·backoff·DOM 200개 | 대형 입력·quota·pagination·polling 테스트 |
 
 ## 4. 에러처리 - 3개
 
 | 번호 | 항목 | 판정 | 핵심 통제 | 검증 |
 |---:|---|:---:|---|---|
-| 1 | 오류 메시지 정보노출 | A | `DEBUG=False`, 일반 오류 페이지, 로그 마스킹 | SEC-032 수정·400/403/404/500/CSRF 비노출 회귀 필요 |
-| 2 | 오류상황 대응 부재 | A | fail-closed, 일반 오류 화면, 송금 롤백, 이미지 실패·commit 정리 | SEC-031 이미지 삭제 실패 수정·회귀 필요 |
+| 1 | 오류 메시지 정보노출 | A | 운영 `DEBUG=False` fail-closed, `SafeExceptionMiddleware`, 일반 오류 페이지, 고정 event 로그, 독립 fallback | SEC-032 DEBUG/운영 400/403/404/500/CSRF·template 실패 비노출 회귀 통과 |
+| 2 | 오류상황 대응 부재 | A | fail-closed, standalone 오류 fallback, 송금 롤백, 이미지 `save_form_data()` 정규화·commit 정리 | SEC-031 삭제·유지·교체·실패와 SEC-032 fallback 회귀 통과 |
 | 3 | 부적절한 예외처리 | A | 구체 예외, 반환값 검사, bare except 금지 | 정적 검색·예외 테스트 |
 
 ## 5. 코드오류 - 5개
@@ -93,7 +93,19 @@
 | 1 | DNS lookup에 의존한 보안결정 | N/A | DNS를 인증·인가에 사용하지 않음 | 소켓/DNS 호출 검색 |
 | 2 | 취약한 API 사용 | A | 지원 버전·hash lock, 위험 API 금지, CI Bandit·pip-audit·CodeQL | Bandit 0, pip-audit 6→0, workflow 검토 |
 
-## 2026-07-12 검증 결과 - SEC-031·032 발견 전 스냅샷
+## 검증 결과
+
+### 2026-07-13 수정·신규 기능 표적 회귀
+
+| 증적 | 결과 | 주요 KISA 연결 |
+|---|---|---|
+| 관련 8개 테스트 클래스 | **87개 통과 / 53.390초** | 공개 allowlist·XSS, 현재 비밀번호·rate, 채팅 sender·CSRF·cursor·limit, 자동조치 경합·보호·복구, 이미지 sentinel, 오류 비노출·fallback |
+| Django system check | 문제 0건 | 설정·모델 기본 일관성 |
+| 변경 후 전체 suite | **168개 통과 / 104.916초 / system check 문제 0건** | SEC-031·032와 신규 기능을 포함한 최종 회귀 |
+| 변경 후 Coverage | **4,190 statements / 248 miss / 94%** | 현재 애플리케이션 전체 계측 |
+| 변경 후 정적·공급망·deploy | **Ruff lint·format 통과, Bandit 0건, pip-audit 0건, deploy check 0건** | 현재 코드와 가상환경 최종 품질 게이트 |
+
+### 2026-07-12 SEC-031·032 발견 전 스냅샷
 
 | 증적 | 결과 | 주요 KISA 연결 |
 |---|---|---|
@@ -108,7 +120,7 @@
 | SHA-256 runtime lock | `requirements.lock` 생성·CI `--require-hashes` | 코드 다운로드 무결성 |
 | CI·CodeQL·Dependabot | 구성·commit SHA pin 로컬 검토 | 실제 GitHub 실행 결과는 최초 push 후 확인 |
 
-이 결과는 보존용 실행 기록이다. SEC-031·032를 수정하고 오류 응답 비노출 테스트를 추가한 뒤 전체 테스트·coverage·Ruff·Bandit·pip-audit·deploy check를 다시 실행해야 KISA 에러처리 항목을 최종 검증으로 바꿀 수 있다.
+이 과거 결과는 보존용 실행 기록이다. SEC-031·032의 직접 분기는 2026-07-13 표적 회귀로, 전체 영향은 같은 날 168개 회귀·94% coverage·Ruff·Bandit·pip-audit·deploy check로 다시 확인했다.
 
 판매자의 상품 판매중·예약중·판매완료 전이와 stale update 방어는 구현·검증했다. 그러나 별도 주문의 구매 요청·승인·거절·취소·환불 상태 머신은 PDF 최소 요구사항이 아니며 구현되지 않았으므로 “동일 주문 동시 수락”을 검증했다고 주장하지 않는다. 실제 시간·상태 증적은 상품 row lock·허용 전이와 DEMO POINT 조건부 차감·append-only 이중 원장·멱등성 테스트로 한정한다.
 
@@ -123,9 +135,9 @@ KISA 설계단계 기준은 구현 체크리스트와 별개로 다음 영역을
 
 각 A 항목은 구현 코드와 `06_TEST_CHECKLIST.md`의 실제 증적에 연결했다. 2026-07-13 릴리스 점검에서는 클린 설치, Git 전체 이력 시크릿, 실제 배포 도메인의 HTTPS·HSTS 준비 상태를 추가 확인한다.
 
-## PDF 25~29페이지 누락 기능 구현 시 재검토 조건
+## PDF 25~29페이지 신규 구현 재검토 결과
 
-- 프로필·마이페이지: 본인 객체 인가, 현재 비밀번호 재확인, Django password change Form, 세션 hash 갱신·다른 세션 정책, 소개글 XSS·길이 제한을 다시 검토한다.
-- 실시간 전체 채팅: 인증된 연결, origin·session 검증, sender 서버결정, 출력 escaping, 메시지 크기·속도·보관·pagination, 연결 고갈과 다중 인스턴스 shared backend를 설계한다.
-- 신고 임계치 자동조치: 신고자 중복·공모·신규 계정 가중치, 보호 계정 제외, 원자적 임계치 판정, 관리자 복구·이의제기·감사로그를 설계해 신고를 이용한 서비스거부를 막는다.
-- 위 기능은 현재 미구현이므로 기존 KISA 통과 수치에 포함하지 않는다. 구현 뒤 관련 A/N/A 판정과 전체 회귀를 갱신한다.
+- 프로필·마이페이지: 활성 일반 사용자의 `username`·`bio`만 공개하고 `ProfileForm`은 `bio`만 허용한다. 소개글 500자·autoescape, 현재 비밀번호를 요구하는 Django `PasswordChangeForm`, validators, 256자 사전 제한, 시간당 10회, `update_session_auth_hash()`를 적용해 인가·Mass Assignment·XSS·hash DoS를 검토했다.
+- 전체 채팅: 동기식 Django·채널 계층 부재에서 WebSocket/SSE 연결 고갈과 새 의존성을 피하기 위해 제한된 2초 polling을 사용한다. 세션 sender, POST CSRF, 서명 cursor, 응답 100건, 본문 1,000자, 조회 40/분·송신 10/분, `textContent`, 양방향 차단 필터, hidden 중단·backoff·DOM 200개를 적용했다.
+- 신고 임계치 자동조치: 서로 다른 3명의 OPEN 신고만 원자적으로 집계하고 자기·판매자 신고를 제외한다. staff·superuser를 보호하고 상품은 영구삭제 대신 임시 차단하며 감사로그·관리자 복구를 제공한다.
+- 운영 잔여 위험: SQLite·`LocMemCache`는 각각 PostgreSQL·공유 원자적 Redis로 전환해야 한다. polling 규모·cache 장애를 부하 시험하고 신고 공모·오탐 이의제기, 사용자 정지 복구 승인, 메시지·신고 증거 보존·파기 기간을 정책으로 확정해야 한다.

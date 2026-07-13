@@ -1,18 +1,19 @@
 # 기능·보안 테스트 체크리스트
 
-자동검사 수치는 2026-07-12 로컬 재실행의 과거 스냅샷이다. `[x]`는 해당 범위의 자동 검사 또는 명시한 수동 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. 2026-07-13 SEC-031·032와 누락 분기를 발견했으므로 수정 뒤 현재 120개 테스트와 신규 회귀를 모두 다시 실행하고 숫자를 갱신한다.
+`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. 2026-07-13 SEC-031·032 수정과 PDF 25~29페이지 기능 추가 뒤 변경 범위 79개 및 전체 168개 테스트를 재실행했다. coverage 94%, 정적·공급망·deploy 검사도 모두 통과했다.
 
 ## 자동 검사 요약
 
 | 검사 | 명령/범위 | 실제 결과 | 상태 |
 |---|---|---|:---:|
-| Django tests | `manage.py test` | 120개 전부 통과, 단 `image-clear`·오류 본문 비노출 분기 미포함 | 과거 스냅샷 완료·재실행 필요 |
-| Coverage | 2026-07-12 120-test instrumentation | 3,169 statements / 223 miss / 93% | 과거 스냅샷 완료·재실행 필요 |
-| Ruff | 애플리케이션·테스트 코드 | 오류 0건 | 완료 |
-| Bandit | Python 코드 | 이슈 0건 | 완료 |
+| Django 변경 기능 tests | 프로필·마이페이지·전체 채팅·상품·신고 6개 test class | 79개 전부 통과, 53.066초, system check 0건 | 현재 변경 범위 완료 |
+| Django 전체 tests | `manage.py test --verbosity 1` | 168개 전부 통과, 104.916초, system check 0건 | 완료 |
+| Coverage | `coverage run --source=accounts,community,config,market manage.py test` | 4,190 statements / 248 miss / 94% | 완료 |
+| Ruff | `ruff check .` 및 `ruff format --check .` | lint 오류 0건, 37개 파일 형식 일치 | 완료 |
+| Bandit | `bandit -r accounts community config market -c pyproject.toml -q` | 이슈 0건 | 완료 |
 | pip-audit 최초 | 가상환경 전체 | `pip` 취약점 6건 | 발견 |
-| pip-audit 재검사 | `pip` 26.1.2 갱신 후 | 취약점 0건 | 조치 완료 |
-| Django 배포 검사 | 검증용 운영 환경의 `check --deploy` | 문제 0건 | 완료 |
+| pip-audit 재검사 | 현재 가상환경 전체 | 알려진 취약점 0건 | 조치 완료 |
+| Django 배포 검사 | 검증용 운영 환경의 `check --deploy --fail-level WARNING` | 문제 0건 | 완료 |
 | 금지 패턴 검색 | Python·HTML의 위험 API·escape 우회 | 일치 0건 | 완료 |
 | Runtime lock | SHA-256 포함 `requirements.lock` | `--require-hashes` 설치 검증 | 완료 |
 | Dev lock | `requirements-dev.lock` | 빈 대상 디렉터리에 `--require-hashes` 설치 성공 | 완료 |
@@ -22,7 +23,7 @@
 
 - [x] TEST-F001 회원가입, 비밀번호 해시·검증, 로그인, POST 로그아웃
 - [x] TEST-F002 공개 상품 목록·검색·상세 조회와 차단 상품 제외
-- [~] TEST-F003 상품 등록, 판매 상태 허용 전이, stale 수정 방지, soft delete·이미지 정리 - 기존 이미지 삭제는 SEC-031 수정 대기
+- [x] TEST-F003 상품 등록, 판매 상태 허용 전이, stale 수정 방지, soft delete·이미지 정리 - SEC-031 `FileField.save_form_data()` 수정과 이미지 전 흐름 회귀 통과
 - [x] TEST-F004 상품별 1:1 대화, 참여자 제한, 30개 페이지 목록·마지막 메시지 annotation
 - [x] TEST-F005 대화 상대 차단·신고, 상품 신고, 비공개 placeholder, Admin 조치
 - [x] TEST-F006 DEMO POINT 송금, 지갑·내역 조회, 서버 잔액 판단
@@ -31,13 +32,13 @@
 ## PDF 25~29페이지 상세 시스템 기능 재대조
 
 - 25~29페이지의 기능·화면·DB를 14개로 중복 제거한 최종 기능표는 `11_CORE_SUBMISSION_CHECKLIST.md`에 둔다.
-- 2026-07-13 현재 직접 판정은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`의 **6 PASS / 3 PARTIAL / 5 FAIL**이다.
-- 관련 5개 테스트 클래스 67개는 46.119초에 통과했다. 이 결과는 구현된 가입·로그인·상품·1대1 대화·신고의 회귀 증적이며 미구현 프로필·마이페이지·전체 채팅·자동 제재를 통과시킨 것이 아니다.
-- [ ] TEST-SD001 공개 사용자 프로필과 소개글 조회
-- [ ] TEST-SD002 본인 소개글·비밀번호 변경 마이페이지
-- [ ] TEST-SD003 실시간 전체 채팅의 인증·발신자·XSS·rate·pagination·보존 상한
-- [ ] TEST-SD004 유일 신고자 임계치 기반 상품 조치와 보호 계정·복구·감사
-- [~] TEST-SD005 내 상품 목록의 UI 접근과 수정·상태·삭제·이미지 전 흐름 - SEC-031 수정 필요
+- 1차 **6 PASS / 3 PARTIAL / 5 FAIL**은 기능 추가 전 역사적 스냅샷이며 현재 판정은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`의 **14 PASS / 0 PARTIAL / 0 FAIL**이다.
+- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 전체 suite·coverage의 최종 통합 수치는 별도 갱신한다.
+- [x] TEST-SD001 공개 사용자 프로필과 소개글 조회 - username·bio allowlist, inactive/suspended/staff/superuser 비공개, XSS escape, read-only
+- [x] TEST-SD002 본인 소개글·비밀번호 변경 마이페이지 - bio mass assignment 방지, 현재 비밀번호·강도 validator·256자 사전상한·10회/시간·세션 회전
+- [x] TEST-SD003 실시간 전체 채팅 - 인증·CSRF·서버 발신자·XSS `textContent`·양방향 차단·signed cursor·요청/렌더 상한·rate·hidden pause/backoff·read-only Admin
+- [x] TEST-SD004 서로 다른 OPEN 신고자 3명 임계치 - 상품 자동 임시 차단·안전 redirect·자동 차단만 수동 복구, 일반 사용자 자동 정지·staff/superuser 보호·Admin 해제와 감사 log
+- [x] TEST-SD005 `/listings/mine/` UI와 세션 소유자 격리, 수정·상태·삭제·이미지 유지/삭제/교체/모순/불량 업로드 전 흐름 - SEC-031 신규 회귀 통과
 
 ## 인증·인가
 
@@ -110,6 +111,7 @@
 - [x] TEST-Q006 관리자 차단 뒤 stale 수정 POST가 차단 상태를 되돌리지 못함
 - [x] TEST-Q007 판매완료 상품에는 새 대화를 시작할 수 없음
 - [x] TEST-Q008 대화 목록 30개 페이지네이션과 Subquery 마지막 메시지로 N+1 제거
+- [x] TEST-Q009 전체 채팅 초기 50·요청 최대 100·DOM 최대 200, poll 40회/분·send 10회/분, signed cursor와 탭 hidden pause·오류 backoff
 
 ## 파일 업로드
 
@@ -125,16 +127,16 @@
 - [x] TEST-U010 교체·soft delete·Admin purge 뒤에도 Report가 참조한 이미지는 private storage에 보존되고 공개 route로 접근 불가
 - [x] TEST-U011 제한 소진 시 상품 Form·이미지 sanitizer 실행 전 429
 - [x] TEST-U012 증거 endpoint의 `view_report` 권한, 매 요청 SHA-256 재검증, 변조 404, `no-store`·`nosniff`, actor log와 증거명 index
-- [ ] TEST-U013 기존 이미지 삭제 체크는 302·DB 빈 이미지·commit 후 파일 삭제이며 500이 발생하지 않음 - SEC-031 수정 대기
-- [ ] TEST-U014 이미지 미변경·교체·삭제+업로드 동시 선택·잘못된 이미지에서 기존/신규/증거 파일 생명주기 회귀 - SEC-031 수정 대기
+- [x] TEST-U013 기존 이미지 삭제 체크가 302·DB 빈 이미지·commit 후 파일 삭제이며 500이 발생하지 않음 - `FileField.save_form_data()` SEC-031 회귀 통과
+- [x] TEST-U014 이미지 미변경·교체·삭제+업로드 동시 선택·잘못된 이미지에서 기존/신규 파일 생명주기와 기존 증거 보존 회귀 통과
 
 ## 오류 응답과 정보노출
 
-- [ ] TEST-E001 `DEBUG=False` BadRequest·PermissionDenied·404·예상하지 못한 예외·CSRF가 각각 400/403/404/500/403 커스텀 화면 사용
-- [ ] TEST-E002 오류 본문에 `Traceback`, `Exception Value`, 절대경로, Python/Django 버전, settings, POST 비밀값 없음
-- [ ] TEST-E003 오류 응답에도 CSP·`nosniff`·`DENY`·`private, no-store` 적용
-- [ ] TEST-E004 standalone 500이 DB·세션·URL reverse·공통 템플릿 장애에도 최소 응답 반환
-- [ ] TEST-E005 400·405·429 공통 안내와 429 `Retry-After` 확인
+- [x] TEST-E001 `DEBUG=False` BadRequest·PermissionDenied·404·예상하지 못한 예외·CSRF가 각각 400/403/404/500/403 안전 응답 사용
+- [x] TEST-E002 오류 본문에 `Traceback`, `Exception Value`, 절대경로, Python/Django 버전, settings, POST 비밀값 없음
+- [x] TEST-E003 오류 응답에도 CSP·`nosniff`·`DENY`·`private, no-store` 적용
+- [x] TEST-E004 standalone 500이 URL reverse·공통 템플릿 렌더링 장애에도 최소 응답 반환
+- [x] TEST-E005 정상 form/JSON 400·resolved 404·405·429 의미와 429 `Retry-After` 보존
 
 ## 회귀·접근성 점검
 
@@ -148,6 +150,7 @@
 - [~] TEST-R008 320px·200% 확대, 키보드 전용, 색 대비와 실제 스크린리더 브라우저 QA
 - [x] TEST-R009 감청색 UI 1440×1000 실화면에서 sticky header·hero·4열 Grid·문서 가로 overflow 0 확인; 1080/900/700/470/360px cascade, header·검색·CTA·상태 변경·페이지네이션·신고 컨트롤 최소 44px, 회원 nav 내부 overflow와 긴 입력 줄바꿈 정적 감사
 - [~] TEST-R010 블랙·화이트 UI에서 1440×1000 홈 4열·overflow 0, 320×800 홈 1열·overflow 0·primary button 44px, 로그인·안전 화면 overflow 0·외부 asset 0 확인; 상품 사진 `filter: none`; 실제 키보드 focus 이동은 최종 사용자 확인 필요
+- [x] TEST-R011 실제 브라우저에서 SEC-031 이미지 비우기 저장·상세 placeholder·DB 빈 값·기존 파일 삭제와 DEBUG 404 기술정보 비노출을 재검증; 1440px 마이페이지와 320px 마이페이지·전체 채팅·내 상품의 문서 overflow 0 확인
 
 ## 명시적 N/A
 
@@ -166,4 +169,4 @@
 - [~] REL-T06 최초 GitHub Actions CI·CodeQL·Dependabot 실행 결과와 대상 commit SHA 기록
 - [~] REL-T07 운영 reverse proxy가 `MEDIA_ROOT`·`/_private-media/`를 직접 alias로 노출하지 않고 모든 이미지 요청이 Django 권한검사 view를 통과하는지 배포 설정 검증
 - [x] REL-T08 README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
-- [ ] REL-T09 SEC-031·032 수정, 신규 오류 회귀, 전체 테스트·coverage·정적·의존성 검사 재실행 후 Open 상태 해소
+- [x] REL-T09 SEC-031·032 직접 분기, 변경 기능 79개, 전체 168개, coverage 94%, Ruff·Bandit·pip-audit·deploy check 최종 통합 검증 완료

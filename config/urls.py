@@ -10,6 +10,7 @@ admin.site.index_title = "플랫폼 요소 관리"
 
 urlpatterns = [
     path("accounts/", include("accounts.urls")),
+    path("community/", include("community.urls")),
     path("", include("market.urls")),
 ]
 

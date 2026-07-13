@@ -7,6 +7,7 @@ from django.utils import timezone
 class User(AbstractUser):
     """Application user with a canonical, case-insensitive username."""
 
+    bio = models.CharField(max_length=500, blank=True)
     is_suspended = models.BooleanField(default=False, db_index=True)
     suspension_reason = models.CharField(max_length=500, blank=True)
     suspended_at = models.DateTimeField(null=True, blank=True)

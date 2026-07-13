@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="작은 거래도 안심할 수 있는 따뜻한 중고마켓, TINY MARKET">
   <title>{% block title %}TINY MARKET{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/site.css' %}?v=20260713-monochrome-2">
+  <link rel="stylesheet" href="{% static 'css/site.css' %}?v=20260713-system-features-1">
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main-content">본문으로 바로가기</a>
@@ -26,16 +26,18 @@
         <a href="{% url 'market:safety' %}">안전 가이드</a>
         {% if user.is_authenticated %}
           <a href="{% url 'market:conversation_list' %}">거래 대화</a>
+          <a href="{% url 'community:global_chat' %}">전체 채팅</a>
+          <a href="{% url 'market:my_listings' %}">내 상품</a>
           <a href="{% url 'market:wallet' %}">내 지갑</a>
         {% endif %}
       </nav>
 
       <div class="header-actions">
         {% if user.is_authenticated %}
-          <span class="user-chip" title="현재 로그인한 사용자">
+          <a class="user-chip" href="{% url 'accounts:mypage' %}" title="마이페이지 열기">
             <span class="user-avatar" aria-hidden="true">{{ user.username|first|upper }}</span>
             <span class="user-name">{{ user.username }}</span>
-          </span>
+          </a>
           <a class="button button-primary button-small" href="{% url 'market:listing_create' %}">물건 올리기</a>
           <form class="inline-form" method="post" action="{% url 'accounts:logout' %}">
             {% csrf_token %}

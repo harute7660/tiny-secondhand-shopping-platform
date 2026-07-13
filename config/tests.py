@@ -3,11 +3,15 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+from django.conf import settings
 from django.core.checks import run_checks
-from django.core.exceptions import ImproperlyConfigured
-from django.test import SimpleTestCase, override_settings
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied, SuspiciousOperation
+from django.http import Http404, HttpResponse, HttpResponseNotAllowed, JsonResponse
+from django.test import Client, SimpleTestCase, override_settings
+from django.urls import path
 
 from .settings import env_bool
+from .urls import urlpatterns as application_urlpatterns
 
 SETTINGS_PATH = Path(__file__).with_name("settings.py")
 TEST_SECRET_KEY = "test-only-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%"
@@ -19,6 +23,71 @@ VALID_PRODUCTION_ENV = {
     "DJANGO_ALLOWED_HOSTS": "market.example.test",
     "DJANGO_SECURE_SSL_REDIRECT": "true",
 }
+
+SAFE_EXCEPTION_MIDDLEWARE = "config.middleware.SafeExceptionMiddleware"
+TEST_MIDDLEWARE = [
+    *(item for item in settings.MIDDLEWARE if item != SAFE_EXCEPTION_MIDDLEWARE),
+    SAFE_EXCEPTION_MIDDLEWARE,
+]
+SENSITIVE_EXCEPTION_MARKER = "assessment-password=NeverExposeThis-2026!"
+SENSITIVE_PATH_MARKER = "C:\\Users\\student\\private-project\\settings.py"
+
+
+def exception_view(request):
+    raise RuntimeError(f"{SENSITIVE_EXCEPTION_MARKER} at {SENSITIVE_PATH_MARKER}")
+
+
+def suspicious_view(request):
+    raise SuspiciousOperation(f"bad input {SENSITIVE_EXCEPTION_MARKER}")
+
+
+def forbidden_view(request):
+    raise PermissionDenied(f"private rule {SENSITIVE_EXCEPTION_MARKER}")
+
+
+def missing_view(request):
+    raise Http404(f"private object {SENSITIVE_EXCEPTION_MARKER}")
+
+
+def csrf_probe_view(request):
+    return HttpResponse("accepted")
+
+
+def ordinary_bad_response_view(request):
+    return JsonResponse({"field": ["사용자에게 보여 줄 검증 오류"]}, status=400)
+
+
+def ordinary_missing_response_view(request):
+    return JsonResponse({"detail": "공개할 수 없는 항목입니다."}, status=404)
+
+
+def method_not_allowed_view(request):
+    return HttpResponseNotAllowed(["GET"])
+
+
+def throttled_view(request):
+    return JsonResponse({"detail": "잠시 후 다시 시도해 주세요."}, status=429)
+
+
+# A private URLConf lets the security boundary be tested without adding
+# deliberate exception routes to the application itself.
+urlpatterns = [
+    path("__test__/exception/", exception_view),
+    path("__test__/suspicious/", suspicious_view),
+    path("__test__/forbidden/", forbidden_view),
+    path("__test__/missing/", missing_view),
+    path("__test__/csrf/", csrf_probe_view),
+    path("__test__/ordinary-400/", ordinary_bad_response_view),
+    path("__test__/ordinary-404/", ordinary_missing_response_view),
+    path("__test__/method/", method_not_allowed_view),
+    path("__test__/throttled/", throttled_view),
+    *application_urlpatterns,
+]
+
+handler400 = "config.views.bad_request"
+handler403 = "config.views.permission_denied"
+handler404 = "config.views.page_not_found"
+handler500 = "config.views.server_error"
 
 
 def load_isolated_settings(**overrides: str):
@@ -116,3 +185,181 @@ class ProductionSettingsTests(SimpleTestCase):
             errors = run_checks(include_deployment_checks=True)
 
         self.assertEqual(errors, [])
+
+
+class ErrorResponseAssertions:
+    def assert_security_headers(self, response):
+        self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+        self.assertEqual(response.headers["Pragma"], "no-cache")
+
+    def assert_no_diagnostics(self, response, *extra_markers):
+        body = response.content.decode("utf-8").lower()
+        forbidden_markers = (
+            SENSITIVE_EXCEPTION_MARKER,
+            SENSITIVE_PATH_MARKER,
+            "traceback",
+            "runtimeerror",
+            "exception type",
+            "exception value",
+            "django version",
+            "python version",
+            "python executable",
+            "installed applications",
+            "secret_key",
+            *extra_markers,
+        )
+        for marker in forbidden_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker.lower(), body)
+
+
+@override_settings(
+    DEBUG=True,
+    MIDDLEWARE=TEST_MIDDLEWARE,
+    ROOT_URLCONF=__name__,
+    SECURE_SSL_REDIRECT=False,
+)
+class DebugSafeExceptionTests(ErrorResponseAssertions, SimpleTestCase):
+    def setUp(self):
+        self.client = Client(raise_request_exception=False)
+
+    def test_unhandled_post_exception_never_returns_technical_debug_page(self):
+        submitted_password = "Posted-Password-Must-Not-Appear!"
+
+        with self.assertLogs("tiny_market.security", level="ERROR") as captured:
+            response = self.client.post(
+                "/__test__/exception/",
+                {
+                    "password": submitted_password,
+                    "confirmation": submitted_password,
+                },
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertContains(response, "TEMPORARY ERROR", status_code=500)
+        self.assert_no_diagnostics(response, submitted_password)
+        self.assert_security_headers(response)
+
+        log_output = " ".join(captured.output)
+        self.assertIn("unhandled_request_exception", log_output)
+        for marker in (
+            submitted_password,
+            SENSITIVE_EXCEPTION_MARKER,
+            SENSITIVE_PATH_MARKER,
+            "RuntimeError",
+        ):
+            self.assertNotIn(marker, log_output)
+
+    def test_render_failure_uses_static_fallback_with_security_headers(self):
+        render_failure_marker = "template-secret / private/base.html"
+
+        with (
+            patch(
+                "config.views.render",
+                side_effect=RuntimeError(render_failure_marker),
+            ),
+            self.assertLogs("tiny_market.security", level="ERROR") as captured,
+        ):
+            response = self.client.get("/__test__/exception/")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertContains(response, "일시적인 오류", status_code=500)
+        self.assert_no_diagnostics(response, render_failure_marker)
+        self.assert_security_headers(response)
+        self.assertIn("error_template_render_failed status=500", " ".join(captured.output))
+        self.assertNotIn(render_failure_marker, " ".join(captured.output))
+
+    def test_expected_http_exceptions_keep_their_status_in_debug_mode(self):
+        for request_path, status in (
+            ("/__test__/suspicious/", 400),
+            ("/__test__/forbidden/", 403),
+            ("/__test__/missing/", 404),
+        ):
+            with self.subTest(path=request_path):
+                response = self.client.get(request_path)
+                self.assertEqual(response.status_code, status)
+                self.assert_no_diagnostics(response)
+                self.assert_security_headers(response)
+
+    def test_unmatched_url_does_not_disclose_url_patterns_in_debug_mode(self):
+        response = self.client.get("/__test__/not-in-urlconf/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "PAGE NOT FOUND", status_code=404)
+        self.assert_no_diagnostics(
+            response,
+            "using the urlconf defined in",
+            "url patterns",
+            "config.tests",
+        )
+        self.assert_security_headers(response)
+
+    def test_resolved_view_json_404_is_not_rewritten_in_debug_mode(self):
+        response = self.client.get("/__test__/ordinary-404/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"detail": "공개할 수 없는 항목입니다."})
+        self.assert_security_headers(response)
+
+
+@override_settings(
+    DEBUG=False,
+    MIDDLEWARE=TEST_MIDDLEWARE,
+    ROOT_URLCONF=__name__,
+    SECURE_SSL_REDIRECT=False,
+)
+class ProductionErrorResponseTests(ErrorResponseAssertions, SimpleTestCase):
+    def setUp(self):
+        self.client = Client(raise_request_exception=False)
+
+    def test_custom_400_403_404_and_500_responses_are_non_diagnostic(self):
+        for request_path, status in (
+            ("/__test__/suspicious/", 400),
+            ("/__test__/forbidden/", 403),
+            ("/__test__/missing/", 404),
+            ("/__test__/exception/", 500),
+            ("/__test__/not-in-urlconf/", 404),
+        ):
+            with self.subTest(path=request_path):
+                response = self.client.get(request_path)
+                self.assertEqual(response.status_code, status)
+                self.assert_no_diagnostics(response)
+                self.assert_security_headers(response)
+
+    def test_csrf_failure_is_custom_non_diagnostic_and_not_cached(self):
+        csrf_client = Client(enforce_csrf_checks=True, raise_request_exception=False)
+        submitted_password = "Csrf-Rejected-Password-Secret!"
+
+        with self.assertLogs("tiny_market.security", level="WARNING") as captured:
+            response = csrf_client.post(
+                "/__test__/csrf/",
+                {"password": submitted_password},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "ACCESS DENIED", status_code=403)
+        self.assert_no_diagnostics(response, submitted_password)
+        self.assert_security_headers(response)
+        self.assertIn("csrf_rejected", " ".join(captured.output))
+        self.assertNotIn(submitted_password, " ".join(captured.output))
+
+    def test_normal_400_405_and_429_responses_are_not_rewritten(self):
+        bad_response = self.client.get("/__test__/ordinary-400/")
+        method_response = self.client.post("/__test__/method/")
+        throttled_response = self.client.get("/__test__/throttled/")
+
+        self.assertEqual(
+            bad_response.json(),
+            {"field": ["사용자에게 보여 줄 검증 오류"]},
+        )
+        self.assertEqual(method_response.status_code, 405)
+        self.assertEqual(method_response.headers["Allow"], "GET")
+        self.assertEqual(
+            throttled_response.json(),
+            {"detail": "잠시 후 다시 시도해 주세요."},
+        )
+        for response in (bad_response, method_response, throttled_response):
+            self.assert_security_headers(response)
