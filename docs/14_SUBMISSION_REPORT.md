@@ -1,6 +1,6 @@
 ﻿# Tiny Second-hand Shopping Platform 프로젝트 보고서
 
-> 제출 전 `XX반`, 이름, 전화번호 뒷자리, Public GitHub URL을 채운 뒤 PDF로 변환한다. 현재 로컬 최종 commit SHA는 `49ca4f4e34d28f406e43c2cd816778ab858a3c71`이다.
+> 제출 전 `XX반`, 이름, 전화번호 뒷자리, Public GitHub URL을 채운 뒤 PDF로 변환한다. 검증된 코드 변경 commit SHA는 `49ca4f4e34d28f406e43c2cd816778ab858a3c71`이다.
 
 ## 1. 프로젝트 개요
 

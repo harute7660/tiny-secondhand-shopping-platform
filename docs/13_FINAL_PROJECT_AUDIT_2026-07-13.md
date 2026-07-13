@@ -12,7 +12,7 @@
 | 과제 제출 준비 | **PENDING** | Public GitHub·원격 CI·clean clone·UAT·PDF·지정 파일명·LMS 미확인 |
 | 실제 다중 인스턴스 운영 | **NO-GO** | PostgreSQL·Redis·TLS/reverse proxy·MFA·백업·모니터링·보존정책이 필요 |
 
-- 최종 로컬 commit SHA: **49ca4f4e34d28f406e43c2cd816778ab858a3c71**
+- 검증된 코드 변경 commit SHA: **49ca4f4e34d28f406e43c2cd816778ab858a3c71**
 - Public Repository URL: **[입력 필요]**
 - GitHub Actions·CodeQL URL: **[입력 필요]**
 
