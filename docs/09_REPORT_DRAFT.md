@@ -36,11 +36,11 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 
 보안 기준은 KISA 공식 게시물에서 확인한 **소프트웨어 개발보안 가이드(2021.12.29)**와 **Python 시큐어코딩 가이드(2023년 개정본)**이다. 사용자 요청의 “2026 시큐어코딩 가이드”라는 표현은 개발 기준연도를 뜻하는 것으로 해석하되, 존재를 확인하지 못한 2026 판본을 임의로 인용하지 않았다. 구현단계 7개 영역·49개 보안약점을 전수 판정했으며 현재 범위에서 37개는 적용, 12개는 기능·언어상 N/A로 분류했다. N/A도 단순 생략하지 않고 관련 기능과 위험 API가 없음을 확인하고, 향후 기능 추가 시 재평가하도록 했다.
 
-마지막 보안 감사에서 인증 시도 동시성, 관리자 권한 상승, 신고 증거 변경, 관리자 이미지 처리 우회, 검증 전 자원 소모 같은 문제를 추가로 발견해 코드를 변경했다. 과거 중간 스냅샷을 재사용하지 않고 마지막 코드에서 전체 검사를 다시 실행했다.
+마지막 보안 감사에서 인증 시도 동시성, 관리자 권한 상승, 신고 증거 변경, 관리자 이미지 처리 우회, 검증 전 자원 소모 같은 문제를 추가로 발견해 코드를 변경했다. 이후 2026-07-13 사용자 수동 QA에서 이미지 삭제 500과 DEBUG 기술 화면 정보노출을 추가 발견해 SEC-031·032 Open으로 등록했다. 아래 자동검사 수치는 이 두 항목 발견 전 스냅샷이므로 수정 후 전체 재실행 전에는 최종 결과로 사용하지 않는다.
 
-- 최종 Django tests: **120개 전부 통과**
-- 최종 Coverage: **3,169 statements / 223 miss / 93%**
-- 최종 정적·의존성·배포 검사: **Ruff/Bandit 0건, pip-audit 0건, deploy check 0건, dev hash 설치 성공**
+- 최근 Django tests 스냅샷: **120개 전부 통과** - 단, `image-clear`·오류 본문 비노출 공백 확인
+- 최근 Coverage: **3,169 statements / 223 miss / 93%**
+- 최근 정적·의존성·배포 검사: **Ruff/Bandit 0건, pip-audit 0건, deploy check 0건, dev hash 설치 성공**
 
 ---
 
@@ -91,8 +91,8 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 
 | ID | 요구사항 | 반영 위치 | 최종 확인 |
 |---|---|---|---|
-| REQ-D001 | 요구사항 분석부터 유지보수까지 전 과정 보고 | 본 문서와 `docs/00~08` | `[최종 확인 필요]` |
-| REQ-D002 | 발견한 보안약점과 변경 내용 설명 | 본 문서 9장, `docs/04_SECURITY_FINDINGS.md` | SEC-001~030 동기화 완료 |
+| REQ-D001 | 요구사항 분석부터 유지보수까지 전 과정 보고 | 본 문서와 `docs/00~10` | `[최종 확인 필요]` |
+| REQ-D002 | 발견한 보안약점과 변경 내용 설명 | 본 문서 9장, `docs/04_SECURITY_FINDINGS.md` | SEC-001~032 동기화; SEC-031·032 Open |
 | REQ-D003 | GitHub Public 저장소 | 표지·15장 | `[공개 URL 입력 및 로그아웃 확인 필요]` |
 | REQ-D004 | README 환경 설정·실행 방법 | `README.md` | `[클린 환경 재현 결과 입력 필요]` |
 | REQ-D005 | AI 도구 적극 활용 | 본 문서 13장, `docs/05_AI_USAGE_LOG.md` | `[최종 AI 사용 건 갱신 필요]` |
@@ -185,7 +185,7 @@ flowchart LR
 | `config` | 환경설정, URL, 오류 응답, 프록시 신뢰, 보안 헤더 | `settings.py`, `middleware.py`, `views.py` |
 | `templates/static` | 서버 렌더링 UI, 접근성·반응형 CSS | `templates/`, `static/css/` |
 | `.github` | CI, CodeQL, Dependabot | workflow와 설정 파일 |
-| `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~09` |
+| `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~10` |
 
 UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 감청색 `#1E3A8A`를 주색으로 흰색 배경, blue gradient hero, sticky glass header, 20px radius card와 일관된 shadow를 적용했다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
 
@@ -432,7 +432,16 @@ N/A 예시는 XML·LDAP·전자서명·외부 TLS 요청·사용자 URL 서버 �
 | SEC-029 | boolean 오타와 길이만 긴 저엔트로피 운영 SECRET_KEY 허용 | 잘못된 운영 구성을 안전하다고 오인 | strict boolean, key 50자·문자 다양성·비안전 prefix, HTTPS fail-closed | 격리 settings negative·정상 deploy 회귀 통과 |
 | SEC-030 | 같은 reporter·대상의 병렬 요청이 중복 OPEN 신고 생성 가능 | 감사 처리 중복·자원 소모 | reporter 잠금과 대상별 조건부 UNIQUE, 충돌 일반화 | DB 제약·중복 웹 요청 회귀 통과 |
 
-### 9.3 변경 후에도 남는 보안 한계
+### 9.3 사용자 수동 QA에서 추가 발견한 Open 항목
+
+| ID | 발견·재현 | 영향 | 현재 보완 | 제출 전 조치 |
+|---|---|---|---|---|
+| SEC-031 | 기존 상품 편집에서 `image-clear=on`을 제출하면 삭제 sentinel `False`를 파일 객체로 직접 대입해 `.name` AttributeError 500 | 상품 수정 가용성 저하, DEBUG 정보노출과 결합 | transaction rollback으로 기존 이미지·파일 손실 없음 | Django 필드 `save_form_data()` 정규화, 삭제·유지·교체·동시 선택·잘못된 파일·신고 증거 회귀 |
+| SEC-032 | 기본 개발 실행의 처리되지 않은 400·404·500이 기술 오류 화면 사용 | traceback, 절대경로, 버전, 소스·로컬 변수, 요청·설정 정보 노출 가능 | production+DEBUG 기동 거부, DEBUG false 커스텀 오류 화면 비노출 확인 | 발표·배포 DEBUG false, 오류 본문·헤더 자동 테스트, standalone 500, 400·405·429 UX 검토 |
+
+이 두 항목은 숨기거나 기존 120개 통과로 종결하지 않는다. 수정·신규 회귀·전체 재실행을 마친 뒤 상태와 수치를 갱신한다.
+
+### 9.4 변경 후에도 남는 보안 한계
 
 “보안약점이 없다”는 절대적 표현 대신, 확인된 위험을 수정하고 남은 위험을 운영 전제로 공개한다.
 
@@ -471,13 +480,13 @@ N/A 예시는 XML·LDAP·전자서명·외부 TLS 요청·사용자 URL 서버 �
 | 운영설정 | DEBUG, SECRET_KEY, hosts, HTTPS, proxy trust, Admin 노출, 익명 동적 cache | 잘못된 구성은 시작 거부, 모든 동적 응답 no-store |
 | 공급망 | hash 설치, Ruff, Bandit, pip-audit, CodeQL, secret scan | 미조치 Critical/High 0건 목표 |
 
-세부 TEST-ID는 `docs/06_TEST_CHECKLIST.md`, 요구사항 연결은 `docs/02_REQUIREMENTS_TRACEABILITY.md`에 있다.
+세부 자동 TEST-ID는 `docs/06_TEST_CHECKLIST.md`, 제출자 수동 인수·제출 점검은 `docs/10_USER_ACCEPTANCE_CHECKLIST.md`, 요구사항 연결은 `docs/02_REQUIREMENTS_TRACEABILITY.md`에 있다.
 
-### 10.3 최종 자동검사 결과
+### 10.3 최근 자동검사 스냅샷 - SEC-031·032 수정 전
 
-아래 값은 SEC-001~030 수정이 모두 반영된 마지막 로컬 코드 기준 재실행 결과다. GitHub 원격 검사만 저장소 공개 전이므로 별도로 미실행 상태를 유지한다.
+아래 값은 SEC-001~030 수정이 반영된 로컬 코드의 실제 결과다. 그러나 이후 사용자 QA에서 기존 테스트가 놓친 SEC-031·032를 발견했으므로 수정 후 전체 회귀·coverage·정적·의존성 검사를 다시 실행해야 한다. GitHub 원격 검사도 저장소 공개 전이므로 미실행 상태다.
 
-| 검사 | 실행 명령·범위 | 최종 실제 결과 | 증적 |
+| 검사 | 실행 명령·범위 | 스냅샷 실제 결과 | 증적 |
 |---|---|---|---|
 | Django system check | `python manage.py check` | 문제 0건 | 로컬 실행 결과 |
 | Migration 일치 | `python manage.py makemigrations --check --dry-run` | 변경 없음 | 로컬 실행 결과 |
@@ -500,6 +509,8 @@ N/A 예시는 XML·LDAP·전자서명·외부 TLS 요청·사용자 URL 서버 �
 2026-07-12 브라우저 QA에서는 판매자 가입·로그인, 상품 등록·예약 상태 변경, 구매자 가입·로그인, 상품 상세·대화 시작·메시지, 대화 문맥 신고 화면, DEMO POINT 24,000P 송금과 잔액 100,000→76,000, 모바일 390px 로그아웃 노출을 확인했다. 폼 label을 한국어화한 뒤 재확인했고 브라우저 console 오류·경고가 없었다.
 
 감청색 UI 적용 후 1440×1000에서 흰색 sticky header, blue gradient hero, 4열 상품 Grid, 카드 radius 20px와 shadow, 문서 가로 overflow 0을 다시 실측했다. 모바일 재접속은 브라우저 도구의 로컬 URL 보안 정책에 막혀 우회하지 않았고, 대신 1080/900/700/470/360px cascade를 독립 감사했다. 이 감사에서 901px 인증 header 경계, 35~40px 주요 보조 컨트롤, 긴 사용자 입력과 회원 nav overflow, sticky anchor 가림 가능성을 찾아 1080px 재선언, 주요 컨트롤 최소 44px target, `overflow-wrap`, 내부 nav scroll·fade, `scroll-margin-top`으로 수정했다. 실제 320px·200% 확대와 스크린리더 QA는 완료로 과장하지 않고 릴리스 전 항목으로 유지한다.
+
+2026-07-13 사용자 QA에서는 기존 이미지 삭제 선택 시 SEC-031 500을 재현했다. DEBUG true 응답은 약 91KB의 기술 화면으로 예외명과 traceback을 포함했고, DEBUG false의 동일 500은 TINY MARKET 일반 오류 화면이며 `AttributeError`·`Traceback`이 없었다. DEBUG true 404는 기술 URL 화면, DEBUG false 404와 CSRF 403은 커스텀 일반 화면이었다. 이 결과는 자동 테스트가 통과해도 사용자가 실제 분기를 확인해야 함을 보여 주며, 수정 전 제출 blocker로 유지한다.
 
 최종 보안 감사 후 변경된 일반·Admin 로그인 제한, 성공 시 account-only clear, 제한 staff의 forged POST 거부, rate limit 시 이미지 decoder 미호출, 차단 상품 metadata 비공개는 자동 회귀로 재검증했다. 모바일 320px·200% 확대, 키보드·실제 스크린리더·색 대비 수동 QA는 PDF 제출 전 확인 대상으로 남는다.
 
@@ -623,9 +634,9 @@ README에는 Python 3.12 가상환경 생성, hash-locked 개발 의존성 설�
 - `[최종 확인 필요]` migration과 서버 시작 성공
 - `[최종 확인 필요]` 전체 테스트와 보안 검사 성공
 - `[최종 확인 필요]` 비밀값·DB·업로드 없이 clone 가능
-- `[완료]` 핵심 문서 8개 strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 수치·의존성 파일명·조치 권한 표현 0건
+- `[완료]` README와 `docs/00~10` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현·의존성 파일명·조치 권한 표현 점검
 
-현재 남은 placeholder는 반·이름·전화번호, Public GitHub URL·SHA·tag, 원격 Actions/CodeQL, 최종 PDF 캡처·렌더링처럼 아직 실행하지 않은 외부·개인 증적뿐이다. 로컬 자동검사 수치는 placeholder로 남기지 않았다.
+남은 작업에는 외부·개인 증적인 반·이름·전화번호, Public GitHub URL·SHA·tag, 원격 Actions/CodeQL, 최종 PDF 캡처·렌더링뿐 아니라 로컬 SEC-031·032 수정, 신규 회귀와 전체 자동검사 재실행도 포함된다. 과거 로컬 자동검사 수치는 실제 스냅샷으로 보존하되 최종 수치로 재사용하지 않는다.
 
 ### 15.3 공개 전 검사
 
@@ -654,21 +665,21 @@ TINY MARKET은 과제의 7개 필수 기능을 하나의 Django 애플리케이�
 
 개발 중 발견한 문제는 숨기지 않고 왜 위험했는지, 어떤 신뢰경계를 잘못 두었는지, 코드·DB·권한·테스트를 어떻게 바꿨는지 기록했다. 특히 최종 감사에서 제한 staff의 계정 권한상승, Admin 사전 인증 상태 혼동, 비밀번호 해시 중 DB lock, 신고 증거와 Admin 업로드 우회까지 추가로 찾아 수정했다.
 
-최종 결론은 자동검사 숫자 하나가 아니라 요구사항→설계→구현→공격 테스트→수정→잔여위험→유지보수의 추적성이다. 마지막 코드의 로컬 전체 회귀·coverage·정적·의존성·deploy·hash 설치 검증은 완료했지만 Public GitHub, 원격 Actions/CodeQL, 최종 PDF는 아직 성공으로 추정하지 않는다. URL, SHA, 개인정보와 외부 증적을 입력하고 릴리스 체크리스트를 완료한 뒤 최종 PDF로 확정한다.
+최종 결론은 자동검사 숫자 하나가 아니라 요구사항→설계→구현→공격 테스트→수정→잔여위험→유지보수의 추적성이다. 이전 코드의 로컬 전체 회귀·coverage·정적·의존성·deploy·hash 설치 검증은 완료했지만 사용자 QA에서 SEC-031·032와 테스트 공백을 추가 발견했다. 두 항목 수정·전체 재검증, Public GitHub, 원격 Actions/CodeQL, 최종 PDF를 완료하기 전에는 제출본으로 확정하지 않는다. URL, SHA, 개인정보와 외부 증적을 입력하고 사용자 인수 체크리스트까지 완료한 뒤 최종 PDF로 확정한다.
 
 ---
 
 ## 부록 A. 요구사항-구현-증적 요약
 
-| 요구사항 | 주요 구현 | 주요 보안 증적 | 최종 결과 |
+| 요구사항 | 주요 구현 | 주요 보안 증적 | 현재 판정 |
 |---|---|---|---|
-| REQ-F001 가입·인증 | `accounts` User/Form/view/LoginAttempt | Mass Assignment, 약한 비밀번호, account 5/network 30, account-only clear, oversized, Admin pre-auth | 로컬 전체 회귀 통과 |
-| REQ-F002 상품 | Listing/Form/view/private image | IDOR, 가격·상태, stale update, 이미지 위장·증거보존·Admin sanitizer | 로컬 전체 회귀 통과 |
-| REQ-F003 소통 | Conversation/Message | 참여자·sender, 차단, pagination·N+1, 비공개 metadata | 로컬 전체 회귀 통과 |
-| REQ-F004 차단·신고 | UserBlock/Report/Admin | 대상 열거 거부, snapshot/SHA/read-only evidence, forged action, protected account | 로컬 전체 회귀 통과 |
-| REQ-F005 송금 | Wallet/Transfer/Ledger service | 조건부 debit, rollback, 멱등, 이중 원장, append-only | 로컬 전체 회귀 통과 |
-| REQ-F006 검색 | home ORM query/filter/sort/page | SQLi 문자열, 허용목록, 길이, 비공개 제외 | 로컬 전체 회귀 통과 |
-| REQ-F007 관리자 | Django Admin·전용 login | `suspend_user`·`block_listing`·`delete_listing`+`purge_listing`, read-only evidence, Admin 기본 비활성 | 로컬 전체 회귀 통과 |
+| REQ-F001 가입·인증 | `accounts` User/Form/view/LoginAttempt | Mass Assignment, 약한 비밀번호, account 5/network 30, account-only clear, oversized, Admin pre-auth | 2026-07-12 스냅샷 통과 |
+| REQ-F002 상품 | Listing/Form/view/private image | IDOR, 가격·상태, stale update, 이미지 위장·증거보존·Admin sanitizer | **SEC-031 Open, 최종 미통과** |
+| REQ-F003 소통 | Conversation/Message | 참여자·sender, 차단, pagination·N+1, 비공개 metadata | 2026-07-12 스냅샷 통과 |
+| REQ-F004 차단·신고 | UserBlock/Report/Admin | 대상 열거 거부, snapshot/SHA/read-only evidence, forged action, protected account | 2026-07-12 스냅샷 통과 |
+| REQ-F005 송금 | Wallet/Transfer/Ledger service | 조건부 debit, rollback, 멱등, 이중 원장, append-only | 2026-07-12 스냅샷 통과 |
+| REQ-F006 검색 | home ORM query/filter/sort/page | SQLi 문자열, 허용목록, 길이, 비공개 제외 | 2026-07-12 스냅샷 통과 |
+| REQ-F007 관리자 | Django Admin·전용 login | `suspend_user`·`block_listing`·`delete_listing`+`purge_listing`, read-only evidence, Admin 기본 비활성 | 2026-07-12 스냅샷 통과 |
 
 ## 부록 B. 최종 검증 명령
 
@@ -715,6 +726,7 @@ python manage.py collectstatic --noinput
 | `docs/07_KISA_BASELINE.md` | KISA 49개 적용성·증적 |
 | `docs/08_COMPETITOR_ANALYSIS.md` | 당근·번개장터 조사와 적용 결정 |
 | `docs/09_REPORT_DRAFT.md` | 최종 제출 보고서 통합 초안 |
+| `docs/10_USER_ACCEPTANCE_CHECKLIST.md` | PDF 원문 기반 사용자 수동 인수·보안·제출 점검 |
 | `.github/workflows/*.yml` | CI·CodeQL 지속 검증 |
 | `requirements*.in/lock` | 직접 의존성과 hash-locked 설치 |
 

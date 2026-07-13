@@ -4,13 +4,13 @@
 
 | ID | 요구사항 | 우선순위 | 인수 조건 | 구현/증적 | 테스트 | 상태 |
 |---|---|---:|---|---|---|---|
-| REQ-001 | 과제 PDF 35페이지의 최소 기능 전체 충족 | P0 | REQ-F001~F007 구현 및 검증 | PDF 35페이지·기능 코드 | Django tests 120개 | 검증 |
+| REQ-001 | 과제 PDF 35페이지의 최소 기능 전체 충족 | P0 | REQ-F001~F007 구현 및 검증 | PDF 35페이지·기능 코드 | 120-test 과거 스냅샷, F002 수동 QA 실패 | 구현 |
 | REQ-002 | 요구사항·설계·구현·테스트·유지보수 전 과정 보고 | P0 | 각 단계의 작업, 이유, 결과, 증적 포함 | `docs/`, README, 최종 PDF | DOC-T01 | 구현 |
-| REQ-003 | 발견한 보안약점과 수정 내역 기록 | P0 | SEC-ID별 원인·수정·재시험·잔여위험 포함 | `04_SECURITY_FINDINGS.md` | SEC-T01 | 검증 |
+| REQ-003 | 발견한 보안약점과 수정 내역 기록 | P0 | SEC-ID별 원인·수정·재시험·잔여위험 포함 | `04_SECURITY_FINDINGS.md` | SEC-T01, SEC-031·032 Open | 구현 |
 | REQ-004 | GitHub Public 저장소 제공 | P0 | 로그아웃 브라우저에서 열림 | 최종 URL·릴리스 SHA | REL-T01 | 설계 |
 | REQ-005 | README에 환경 설정 및 실행 방법 명시 | P0 | 클린 환경에서 README 명령으로 실행 성공 | `README.md` | REL-T02 | 구현 |
 | REQ-006 | AI 도구 적극 활용 및 검증 과정 기록 | P0 | 사용 목적·결과·채택 여부·사람 검증 포함 | `05_AI_USAGE_LOG.md` | DOC-T02 | 검증 |
-| REQ-007 | KISA 가이드 기반 개발보안 적용 | P0 | 49개 구현단계 항목의 A/N/A 근거와 검증 존재 | `07_KISA_BASELINE.md` | KISA-T01 | 검증 |
+| REQ-007 | KISA 가이드 기반 개발보안 적용 | P0 | 49개 구현단계 항목의 A/N/A 근거와 검증 존재 | `07_KISA_BASELINE.md` | KISA-T01, 에러처리 재검증 필요 | 구현 |
 | REQ-008 | 제출 PDF에 GitHub 링크 포함 | P0 | URL 클릭 및 로그아웃 접근 성공 | 최종 PDF | REL-T03 | 설계 |
 | REQ-009 | 제출 파일명에 공백 없이 지정 형식 사용 | P0 | `[WHS][secure-coding][XX반]이름(뒷4자리).pdf`와 일치 | 최종 PDF | REL-T04 | 설계 |
 | REQ-010 | 개인 작업 목표 2026-07-12~13, 공식 제출 기한 2026-07-24 | P0 | 7월 13일 결과·보고서 초안 완성, 7월 24일 전 제출 | 개발 일지·제출 증적 | REL-T05 | 구현 |
@@ -20,7 +20,7 @@
 | ID | 원문 요구사항 | 인수 조건 | 핵심 보안 조건 | 구현 | 테스트 | 상태 |
 |---|---|---|---|---|---|---|
 | REQ-F001 | 사람들이 플랫폼에 가입할 수 있어야 함 | 약한 비밀번호는 거부되고 정상 사용자는 가입·로그인·로그아웃 가능 | 역할 Mass Assignment 금지, 해시 저장, 일반·Admin 로그인 제한, 가입 rate limit, 세션 회전 | `accounts` | 가입 quota·proxy 경계·Admin 로그인·정지 DB 불변식 포함 테스트 | 검증 |
-| REQ-F002 | 상품들을 올리고 볼 수 있어야 함 | 본인 상품 CRUD, 판매 상태 변경과 공개 상품 조회 가능 | 판매자 서버 결정, 계정 quota/rate, IDOR·stale update 차단, 이미지 검증·no-store·정리 | `market.Listing` | quota/rate·TOCTOU·상태 전이·이미지 삭제·정지 판매자 테스트 | 검증 |
+| REQ-F002 | 상품들을 올리고 볼 수 있어야 함 | 본인 상품 CRUD, 판매 상태 변경과 공개 상품 조회 가능 | 판매자 서버 결정, 계정 quota/rate, IDOR·stale update 차단, 이미지 검증·no-store·정리 | `market.Listing` | 기존 120 tests에 이미지 삭제 sentinel 분기 누락; SEC-031 Open | 구현 |
 | REQ-F003 | 플랫폼 사용자끼리 소통 가능 | 상품별 판매자·구매 희망자 1:1 대화와 페이지 목록 가능 | 참여자 외 접근 금지, sender 서버 결정, 차단 후 전송 금지, 30개 페이지·Subquery | `Conversation`, `Message` | 비참여자·발신자·차단·판매완료·N+1 회귀 테스트 | 검증 |
 | REQ-F004 | 악성 사용자나 상품 차단 | 사용자는 실제 대화 상대·상품 신고와 개인 차단, 관리자는 계정 정지·상품 숨김 가능 | 대화 기반 대상, `suspend_user`·`block_listing`, read-only snapshot·SHA, `view_report` 증거 endpoint, 보호 계정·비공개 placeholder | `UserBlock`, `Report`, Admin | 열거 거부·위조 POST·보호 계정·snapshot/이미지 보존·SHA 재검증·비공개 metadata 테스트 | 검증 |
 | REQ-F005 | 사용자 간 송금 가능 | DEMO POINT를 잔액 범위 내에서 송금하고 내역 조회 가능 | 실제 금융정보 미수집, 원자적 이중 원장, 음수 방지, 멱등키, append-only 원장 | `WalletAccount`, `Transfer`, `LedgerEntry` | 이중 원장·멱등·롤백·인스턴스/QuerySet 불변성 테스트 | 검증 |
@@ -29,9 +29,11 @@
 
 ## 2026-07-12 검증 스냅샷
 
+이 표는 당시 실제 실행 결과를 보존한 **과거 스냅샷**이다. 2026-07-13 사용자 QA에서 기존 이미지 삭제 500과 DEBUG 기술 화면 노출 위험을 발견했으므로, SEC-031·032 수정과 신규 회귀가 끝날 때까지 최종 합격 근거로 사용하지 않는다.
+
 | 검증 | 결과 | 요구사항 연결 |
 |---|---|---|
-| Django tests | 120개 통과 | REQ-F001~F007, SEC-001~030 회귀 |
+| Django tests | 120개 통과 | SEC-001~030 회귀; 이미지 삭제·오류 본문 비노출 분기는 미포함 |
 | Coverage | 120-test instrumentation 3,169 statements / 223 miss / 93% | 핵심 계정·인가·업로드·신고·원장·운영설정 분기 |
 | Ruff | 오류 0건 | 코드오류·유지보수성 |
 | Bandit | 이슈 0건 | 위험 API·보안 구현 패턴 |

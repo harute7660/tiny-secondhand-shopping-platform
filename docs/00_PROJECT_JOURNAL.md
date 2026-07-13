@@ -236,6 +236,27 @@
 - 7월 13일에는 클린 설치 재현, Git 현재 파일·전체 이력의 비밀정보 점검, 공개 저장소 URL 확인, 보고서 PDF 렌더링·링크·파일명 검사를 수행한다.
 - 이 항목들은 실행 전 성공으로 표기하지 않고 `06_TEST_CHECKLIST.md`의 릴리스 점검 결과로 갱신한다.
 
+## 2026-07-13 - 사용자 제보 이미지 오류와 오류화면 정보노출 감사
+
+- 단계: 유지보수 / 장애 재현 / 보안점검
+- 수행 작업: 기존 이미지가 있는 상품 편집에서 삭제 선택 POST를 격리 test DB로 재현하고 DEBUG True/False의 400·403·404·500·CSRF 응답을 대조했다.
+- 발견: `ClearableFileInput`의 삭제 sentinel `False`를 `listing_update`가 파일 필드에 직접 대입해 FileField 저장 시 `.name` AttributeError 500이 발생했다. 개발 DEBUG 화면은 traceback·절대경로·버전·소스·로컬 변수 같은 내부정보를 표시했다.
+- 원인: transaction 안에서 최신 행을 다시 잠그기 위해 Form instance가 아닌 locked instance로 값을 복사하면서 Django `FileField.save_form_data()`의 `False`→빈 파일명 변환을 우회했다.
+- 영향: DB transaction은 rollback되어 기존 이미지 손실은 없었지만 수정 기능의 가용성이 깨지고 DEBUG 환경에서 CWE-209 정보노출로 연결됐다.
+- 확인한 보완: production+DEBUG는 시작을 거부하며, DEBUG false에서는 커스텀 500·404와 CSRF 403에 진단 문자열이 없었다.
+- 현재 상태: SEC-031·032를 Open으로 등록했다. 사용자는 이번 요청에서 확인과 체크리스트 작성을 요구했으므로 코드 수정은 다음 명시적 수정 지시 후 회귀 테스트와 함께 진행한다.
+- 추가 품질 공백: 일부 400·429는 plain text, 405는 Django 기본 응답이며, 500 템플릿은 공통 base·세션·URL reverse에 의존한다.
+
+## 2026-07-13 - 과제 PDF 원문 기반 사용자 인수 체크리스트
+
+- 단계: 요구사항 재검토 / 체크리스트 / 제출 준비
+- 수행 작업: PDF 24·34·35·36페이지를 다시 렌더링·육안 확인하고 텍스트 추출 결과와 대조했다.
+- 이유: 개발자 자동 테스트 통과만으로는 제출자가 실제 화면, Public GitHub, README 재현, 보고서 PDF·파일명·LMS 업로드를 확인했다고 증명할 수 없기 때문이다.
+- 반영 범위: 7개 필수 기능, 24페이지 시스템 설계, 개발 전 과정 보고서, 발견 보안약점 전후, AI 활용, Public GitHub·README, 지정 파일명·LMS 제출을 `10_USER_ACCEPTANCE_CHECKLIST.md`에 연결했다.
+- 기한 판단: PDF 36페이지의 7월 23일보다 사용자 정정 공지의 **2026-07-24 23:59:59**를 우선했다.
+- 결과: 자동검사용 `06_TEST_CHECKLIST.md`와 제출자 수동검사용 `10_USER_ACCEPTANCE_CHECKLIST.md`를 분리했고, SEC-031·032와 Public GitHub·모바일·최종 PDF를 현재 blocker로 표시했다.
+- 다음 작업: blocker 수정 후 제출자가 직접 체크하고 계정·commit SHA·일시·스크린샷·원격 URL 증적을 기록한다.
+
 ## 후속 기록 템플릿
 
 ### YYYY-MM-DD HH:MM - 제목

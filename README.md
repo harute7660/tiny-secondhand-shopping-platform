@@ -4,15 +4,15 @@
 
 > **DEMO POINT는 과제 검증용 가상 값입니다.** 현금·예금·전자지급수단이 아니며 충전, 출금, 환전, 현금화 또는 구매자 보호 기능이 없습니다. 실제 돈이나 금융정보를 입력하지 마세요.
 
-핵심 구현과 로컬 검증은 완료되었습니다. 정식 버전 태그는 아직 만들지 않아 변경 이력은 `Unreleased`로 관리합니다.
+핵심 기능은 구현되어 있으나, 2026-07-13 사용자 QA에서 이미지 삭제 500 오류(SEC-031)와 개발용 DEBUG 기술 화면의 정보노출 위험(SEC-032)을 추가 발견했습니다. 두 항목 수정·회귀검사와 Public GitHub 검증 전까지 제출 완료 상태로 간주하지 않습니다. 정식 버전 태그는 아직 만들지 않아 변경 이력은 `Unreleased`로 관리합니다.
 
 ## 검증 결과
 
-2026-07-12 최종 로컬 검증 스냅샷입니다.
+다음은 **SEC-031·032 발견 전인 2026-07-12 자동검사 스냅샷**입니다. 당시 검사는 통과했지만 기존 이미지 삭제와 운영 오류 본문 비노출 분기가 빠져 있었으므로, 두 항목 수정 후 전체 검사를 다시 실행해야 합니다.
 
 | 검사 | 결과 |
 |---|---|
-| `python manage.py test` | **120개 통과** |
+| `python manage.py test` | **120개 통과** — 이미지 삭제·오류 본문 비노출 분기 미포함 |
 | Coverage | **93%** (3,169 statements / 223 miss) |
 | `python manage.py check` | 문제 0건 |
 | `python manage.py makemigrations --check --dry-run` | 변경 없음 |
@@ -37,6 +37,8 @@ GitHub Actions CI와 CodeQL은 저장소에 구성되어 있습니다. 위 표�
 | 관리자 관리 | Django Admin에서 플랫폼 요소 검토·조치 | 운영 기본 비활성, 세부 권한 재검사, 보호 계정 제외, 원장 읽기 전용 |
 
 상세 요구사항 추적은 [`docs/02_REQUIREMENTS_TRACEABILITY.md`](docs/02_REQUIREMENTS_TRACEABILITY.md)를 참고하세요.
+
+제출자가 직접 기능·보안·GitHub·보고서 PDF를 점검하는 표는 [`docs/10_USER_ACCEPTANCE_CHECKLIST.md`](docs/10_USER_ACCEPTANCE_CHECKLIST.md)를 사용하세요.
 
 ## 기술 구성
 

@@ -20,6 +20,7 @@ AI 출력은 참고자료이며 사실성, 보안성, 요구사항 적합성을 
 | AI-014 | 2026-07-12 | OpenAI Codex | 공급망·지속 검증 설계 | hash lock, CI, CodeQL, Dependabot 초안 | 런타임 lock과 최소 권한·SHA pin workflow를 채택 | 로컬 파일·pin 검토; GitHub 실행 성공은 미확인으로 유지 | `requirements.lock`, `.github/`, SEC-018 |
 | AI-015 | 2026-07-12 | OpenAI Codex | 최종 회귀 실행과 문서 수치 갱신 | 전체 테스트와 coverage 보고서 | 실제 명령 결과만 반영 | 120개 전부 통과, Coverage 93%, Ruff·Bandit 0 | `06_TEST_CHECKLIST.md` |
 | AI-016 | 2026-07-12 | OpenAI Codex 및 병렬 UI 감사 에이전트 | 감청색 반응형 디자인 구현과 경계 폭·터치 영역 감사 | CSS 토큰·Grid/Flex·반응형 override와 개선 목록 | Tailwind 신규 의존성은 거절하고 기존 CSS 구조를 채택; 901px cascade·주요 컨트롤 44px 미달·긴 입력 overflow 제안은 수정 반영 | AI-assisted 1440×1000 실측, CSS cascade·DOM 정적 감사, Django 회귀; 사용자 최종 모바일 육안검수는 pending | `static/css/site.css`, ADR-008, TEST-R009 |
+| AI-017 | 2026-07-13 | OpenAI Codex 및 병렬 오류·UI 감사 에이전트 | 사용자 제보 이미지 500 진단, 오류 정보노출 대조, PDF 원문 기반 수동 체크리스트 작성 | SEC-031·032 원인·재현, DEBUG True/False 오류 결과, 사용자 인수·제출 체크리스트 | 오류를 숨기거나 기존 120개 통과로 종결하지 않고 Open finding과 테스트 공백으로 기록; UI 복제 주장은 코드·asset 감사로 검증 | PDF 24·34~36페이지 렌더링·텍스트 대조, 격리 test DB 재현, DEBUG별 응답 본문 검사, 구현·문서 교차검토 | `04_SECURITY_FINDINGS.md`, `10_USER_ACCEPTANCE_CHECKLIST.md` |
 
 ## 2026-07-13 제출 단계 기록 원칙
 

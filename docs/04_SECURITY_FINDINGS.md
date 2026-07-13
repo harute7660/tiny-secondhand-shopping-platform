@@ -8,7 +8,7 @@
 - 위험도: `Critical`, `High`, `Medium`, `Low`, `Informational`
 - `Accepted`는 이유, 영향, 보완 통제, 제거 계획이 모두 있어야 한다.
 
-## 2026-07-12 발견 현황
+## 발견 현황
 
 | ID | 발견 | 위험도 | 상태 | 검증 결과 |
 |---|---|:---:|:---:|---|
@@ -42,6 +42,8 @@
 | SEC-028 | 사용자 행동·증거 Admin 변조와 과도한 purge/block 권한 | High | Fixed | read-only·전용 권한 회귀 통과 |
 | SEC-029 | boolean 오타·짧은 운영 SECRET_KEY 허용 | High | Fixed | 격리 settings 7개 회귀 통과 |
 | SEC-030 | 동일 대상을 동시에 중복 신고할 경쟁조건 | Medium | Fixed | 조건부 UNIQUE·reporter 잠금 검증 |
+| SEC-031 | 상품 이미지 삭제 sentinel을 파일 객체로 오인해 500 발생 | Medium | Open | `image-clear=on`에서 재현, 수정·회귀 필요 |
+| SEC-032 | 개발·발표 모드의 기술 오류 페이지 내부정보 노출 | Medium | Open | DEBUG True/False 오류 응답 대조, 배포·테스트 보강 필요 |
 
 ### SEC-001 - 신고 대상의 모델 검증 전 서버 바인딩 누락
 
@@ -281,12 +283,31 @@
 - 검증: 모델 제약·중복 웹 요청 회귀와 migration drift 검사.
 - 잔여 위험: 일일 총량 제한은 운영 DB 격리 수준과 공유 cache에서 부하 검증한다.
 
-## 공통 자동 검증
+### SEC-031 - 상품 이미지 삭제 sentinel 처리 오류
 
-- Django tests: 120개 통과
+- 발견 단계/방법: 사용자가 기존 이미지가 있는 상품 수정 화면에서 파일을 변경·삭제하던 중 `AttributeError: 'bool' object has no attribute 'name'` 화면을 제보해 실제 `image-clear=on` POST와 코드 경로를 재현했다.
+- KISA/CWE 연결: 오류상황 대응 부재, 입력데이터 검증 및 표현 변환, CWE-703.
+- 원인·위험: Django `ClearableFileInput`은 기존 파일 삭제를 `False` sentinel로 표현한다. `ListingForm` 검증은 정상이나 `listing_update`가 ModelForm의 `FileField.save_form_data()` 변환을 우회하고 `setattr(locked, "image", False)`를 수행해 FileField 저장 시 `.name` 접근에서 500이 발생한다. 상품 수정 가용성을 깨고 DEBUG 환경에서는 SEC-032의 정보노출로 이어진다.
+- 현재 보완: 저장 transaction이 rollback되고 commit 후 삭제 callback도 실행되지 않아 재현 시 기존 DB 이미지와 파일은 손실되지 않았다.
+- 수정 계획: 각 모델 필드의 `save_form_data()`를 통해 정규화하거나 image의 `False`를 빈 파일명으로 변환한다. 기존 이미지 삭제·미변경·교체·삭제와 업로드 동시 선택·잘못된 이미지·신고 증거 보존 회귀를 추가한다.
+- 상태: **Open**. 수정과 전체 회귀 전에는 제출 완료로 표시하지 않는다.
+
+### SEC-032 - DEBUG 기술 오류 화면의 내부정보 노출
+
+- 발견 단계/방법: SEC-031의 브라우저 화면과 동적 오류 응답을 `DEBUG=True`와 `DEBUG=False`에서 대조했다.
+- KISA/CWE 연결: 오류 메시지를 통한 정보노출, 오류상황 대응 부재, CWE-209.
+- 원인·위험: 기본 개발 실행은 `DEBUG=True`여서 처리되지 않은 400·404·500 예외가 Django 기술 화면을 사용한다. 500에는 예외명, traceback, 절대경로, 소스·로컬 변수, Python/Django 버전, 요청·설정 정보가 포함될 수 있고 로그인·가입 처리 중 예외라면 POST 비밀값 노출 위험도 있다.
+- 현재 보완: 서버는 `127.0.0.1`에만 bind했고 production에서 `DEBUG=True`이면 시작을 거부한다. `DEBUG=False` 동적 검증에서는 커스텀 400·403·404·500·CSRF 화면에 진단 문자열이 없고 보안 헤더가 유지됐다.
+- 수정 계획: 발표·배포용 DEBUG false 절차를 명시하고 400·403·404·500·CSRF 템플릿·진단정보 비노출·CSP·no-store 자동 테스트를 추가한다. 500은 공통 base·세션·URL reverse에 의존하지 않는 standalone 응답으로 보강하고 plain 400·429·기본 405 UI도 검토한다.
+- 상태: **Open**. 개발 기술 화면을 인터넷 또는 발표 환경에 노출하지 않는다.
+
+## 2026-07-12 공통 자동검사 스냅샷
+
+- Django tests: 120개 통과 - `image-clear`·오류 본문 비노출 분기 미포함
 - Coverage: 120-test instrumentation 3,169 statements / 223 miss / 93%
 - Ruff: 오류 0건
 - Bandit: 이슈 0건
 - pip-audit: 조치 후 취약점 0건
 - 금지 API·템플릿 패턴 검색: 일치 0건
 - CI·CodeQL: 구성 완료, GitHub 최초 실행 결과는 아직 미확인
+- 알려진 테스트 공백: 기존 120개는 `image-clear`와 DEBUG false 오류 본문 비노출을 포함하지 않아 SEC-031·032를 발견하지 못했다.

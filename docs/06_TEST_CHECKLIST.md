@@ -1,13 +1,13 @@
 # 기능·보안 테스트 체크리스트
 
-검증 스냅샷은 2026-07-12 최종 로컬 재실행 기준이다. `[x]`는 자동 검사 또는 명시한 수동 코드 검토 완료, `[~]`는 GitHub·브라우저 등 외부 상태 확인 대상, `N/A`는 이유를 확인한 비적용 항목이다. 이후 코드가 바뀌면 현재 120개 테스트를 다시 실행하고 숫자를 갱신한다.
+자동검사 수치는 2026-07-12 로컬 재실행의 과거 스냅샷이다. `[x]`는 해당 범위의 자동 검사 또는 명시한 수동 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. 2026-07-13 SEC-031·032와 누락 분기를 발견했으므로 수정 뒤 현재 120개 테스트와 신규 회귀를 모두 다시 실행하고 숫자를 갱신한다.
 
 ## 자동 검사 요약
 
 | 검사 | 명령/범위 | 실제 결과 | 상태 |
 |---|---|---|:---:|
-| Django tests | `manage.py test` | 120개 전부 통과 | 완료 |
-| Coverage | 최종 120-test 전체 instrumentation | 3,169 statements / 223 miss / 93% | 완료 |
+| Django tests | `manage.py test` | 120개 전부 통과, 단 `image-clear`·오류 본문 비노출 분기 미포함 | 과거 스냅샷 완료·재실행 필요 |
+| Coverage | 2026-07-12 120-test instrumentation | 3,169 statements / 223 miss / 93% | 과거 스냅샷 완료·재실행 필요 |
 | Ruff | 애플리케이션·테스트 코드 | 오류 0건 | 완료 |
 | Bandit | Python 코드 | 이슈 0건 | 완료 |
 | pip-audit 최초 | 가상환경 전체 | `pip` 취약점 6건 | 발견 |
@@ -22,7 +22,7 @@
 
 - [x] TEST-F001 회원가입, 비밀번호 해시·검증, 로그인, POST 로그아웃
 - [x] TEST-F002 공개 상품 목록·검색·상세 조회와 차단 상품 제외
-- [x] TEST-F003 상품 등록, 판매 상태 허용 전이, stale 수정 방지, soft delete·이미지 정리
+- [~] TEST-F003 상품 등록, 판매 상태 허용 전이, stale 수정 방지, soft delete·이미지 정리 - 기존 이미지 삭제는 SEC-031 수정 대기
 - [x] TEST-F004 상품별 1:1 대화, 참여자 제한, 30개 페이지 목록·마지막 메시지 annotation
 - [x] TEST-F005 대화 상대 차단·신고, 상품 신고, 비공개 placeholder, Admin 조치
 - [x] TEST-F006 DEMO POINT 송금, 지갑·내역 조회, 서버 잔액 판단
@@ -114,6 +114,16 @@
 - [x] TEST-U010 교체·soft delete·Admin purge 뒤에도 Report가 참조한 이미지는 private storage에 보존되고 공개 route로 접근 불가
 - [x] TEST-U011 제한 소진 시 상품 Form·이미지 sanitizer 실행 전 429
 - [x] TEST-U012 증거 endpoint의 `view_report` 권한, 매 요청 SHA-256 재검증, 변조 404, `no-store`·`nosniff`, actor log와 증거명 index
+- [ ] TEST-U013 기존 이미지 삭제 체크는 302·DB 빈 이미지·commit 후 파일 삭제이며 500이 발생하지 않음 - SEC-031 수정 대기
+- [ ] TEST-U014 이미지 미변경·교체·삭제+업로드 동시 선택·잘못된 이미지에서 기존/신규/증거 파일 생명주기 회귀 - SEC-031 수정 대기
+
+## 오류 응답과 정보노출
+
+- [ ] TEST-E001 `DEBUG=False` BadRequest·PermissionDenied·404·예상하지 못한 예외·CSRF가 각각 400/403/404/500/403 커스텀 화면 사용
+- [ ] TEST-E002 오류 본문에 `Traceback`, `Exception Value`, 절대경로, Python/Django 버전, settings, POST 비밀값 없음
+- [ ] TEST-E003 오류 응답에도 CSP·`nosniff`·`DENY`·`private, no-store` 적용
+- [ ] TEST-E004 standalone 500이 DB·세션·URL reverse·공통 템플릿 장애에도 최소 응답 반환
+- [ ] TEST-E005 400·405·429 공통 안내와 429 `Retry-After` 확인
 
 ## 회귀·접근성 점검
 
@@ -143,4 +153,5 @@
 - [~] REL-T05 공백 없는 지정 파일명과 공식 기한 2026-07-24 확인
 - [~] REL-T06 최초 GitHub Actions CI·CodeQL·Dependabot 실행 결과와 대상 commit SHA 기록
 - [~] REL-T07 운영 reverse proxy가 `MEDIA_ROOT`·`/_private-media/`를 직접 alias로 노출하지 않고 모든 이미지 요청이 Django 권한검사 view를 통과하는지 배포 설정 검증
-- [x] REL-T08 핵심 문서 8개 strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 수치·파일명·권한 표현 0건
+- [x] REL-T08 README와 `docs/00~10` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
+- [ ] REL-T09 SEC-031·032 수정, 신규 오류 회귀, 전체 테스트·coverage·정적·의존성 검사 재실행 후 Open 상태 해소
