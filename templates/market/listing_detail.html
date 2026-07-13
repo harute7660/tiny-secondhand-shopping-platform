@@ -65,7 +65,7 @@
 
       <div class="defect-summary">
         <h2>하자 체크리스트</h2>
-        <p class="defect-disclosure">{{ listing.get_defect_disclosure_display }}</p>
+        <p class="defect-disclosure defect-disclosure-{{ listing.defect_disclosure|lower }}">{{ listing.get_defect_disclosure_display }}</p>
         {% if listing.defect_disclosure == 'PRESENT' %}
           <ul>
             {% for defect in listing.defects.all %}<li>{{ defect.get_code_display }}</li>{% endfor %}
@@ -92,7 +92,7 @@
       </div>
 
       {% if user == listing.seller and has_active_trade %}
-        <div class="form-alert" role="status"><p>거래 완료 확인이 진행 중이거나 완료되어 상품 정보와 상태를 임의로 바꿀 수 없습니다.</p></div>
+        <div class="form-notice form-notice-warning" role="status"><p>거래 완료 확인이 진행 중이거나 완료되어 상품 정보와 상태를 임의로 바꿀 수 없습니다.</p></div>
       {% endif %}
 
       {% if user == listing.seller and not has_active_trade and listing.status == 'ACTIVE' or user == listing.seller and not has_active_trade and listing.status == 'RESERVED' %}
@@ -103,7 +103,7 @@
           {% if listing.status == 'ACTIVE' %}<button type="submit" name="status" value="RESERVED">예약 중으로</button>{% endif %}
         </form>
       {% elif user == listing.seller and listing.status == 'BLOCKED' %}
-        <div class="form-alert" role="status"><p>운영 정책 검토로 차단된 상품입니다. 관리자를 통해 상태를 확인하세요.</p></div>
+        <div class="form-notice form-notice-danger" role="status"><p>운영 정책 검토로 차단된 상품입니다. 관리자를 통해 상태를 확인하세요.</p></div>
       {% endif %}
 
       {% if user.is_authenticated and user != listing.seller %}

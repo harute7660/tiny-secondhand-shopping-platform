@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.conf import settings
-from django.core.exceptions import PermissionDenied, SuspiciousOperation
+from django.core.exceptions import PermissionDenied, RequestDataTooBig, SuspiciousOperation
+from django.core.files.uploadhandler import FileUploadHandler
 from django.http import Http404, HttpRequest, HttpResponse
 
 from .views import (
@@ -13,6 +14,96 @@ from .views import (
     security_logger,
     server_error,
 )
+
+_UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE = "_multipart_upload_limit_exceeded"
+
+
+class CumulativeUploadLimitHandler(FileUploadHandler):
+    """Pass file chunks through while enforcing one limit across all files."""
+
+    def __init__(self, request: HttpRequest, *, max_bytes: int) -> None:
+        super().__init__(request)
+        self.max_bytes = max_bytes
+        self.received_bytes = 0
+
+    def receive_data_chunk(self, raw_data: bytes, start: int) -> bytes:
+        # ``start`` is reset for every file, so keep a request-wide counter of
+        # our own. This also covers a missing, chunked, or understated request
+        # Content-Length whenever the server streams multipart data to Django.
+        self.received_bytes += len(raw_data)
+        if self.received_bytes > self.max_bytes:
+            setattr(self.request, _UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE, True)
+            raise RequestDataTooBig("Multipart upload exceeded the configured limit.")
+        return raw_data
+
+    def file_complete(self, file_size: int) -> None:
+        # A later handler still creates the UploadedFile. Returning None keeps
+        # this handler transparent apart from its cumulative byte accounting.
+        return None
+
+
+class MultipartUploadLimitMiddleware:
+    """Reject oversized multipart writes before CSRF or view parsing begins."""
+
+    limited_methods = frozenset({"POST", "PUT", "PATCH"})
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if not self._is_limited_multipart_request(request):
+            return self.get_response(request)
+
+        max_bytes = settings.MULTIPART_UPLOAD_MAX_BYTES
+        content_length = self._content_length(request)
+        if content_length is not None and content_length > max_bytes:
+            return self._limit_response(request)
+
+        # Install before CsrfViewMiddleware: CSRF may access request.POST and
+        # therefore start multipart parsing before the selected view runs.
+        request.upload_handlers.insert(
+            0,
+            CumulativeUploadLimitHandler(request, max_bytes=max_bytes),
+        )
+
+        try:
+            response = self.get_response(request)
+        except RequestDataTooBig:
+            # Only consume the exception raised by our handler. Existing
+            # DATA_UPLOAD_MAX_MEMORY_SIZE failures keep Django's normal flow.
+            if not getattr(request, _UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE, False):
+                raise
+            return self._limit_response(request)
+
+        # Django may already have converted a SuspiciousOperation raised while
+        # parsing into a response. Replace it so DEBUG can never expose a
+        # technical exception page or the handler's internal message.
+        if getattr(request, _UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE, False):
+            return self._limit_response(request)
+        return response
+
+    @classmethod
+    def _is_limited_multipart_request(cls, request: HttpRequest) -> bool:
+        if request.method not in cls.limited_methods:
+            return False
+        media_type = request.META.get("CONTENT_TYPE", "").partition(";")[0]
+        return media_type.strip().lower().startswith("multipart/")
+
+    @staticmethod
+    def _content_length(request: HttpRequest) -> int | None:
+        value = request.META.get("CONTENT_LENGTH")
+        if value in (None, ""):
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    @staticmethod
+    def _limit_response(request: HttpRequest) -> HttpResponse:
+        setattr(request, _UPLOAD_LIMIT_EXCEEDED_ATTRIBUTE, True)
+        return bad_request(request, RequestDataTooBig())
 
 
 class TrustedProxyHeadersMiddleware:

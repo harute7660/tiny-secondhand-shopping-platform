@@ -353,6 +353,7 @@ def listing_detail(request: HttpRequest, pk) -> HttpResponse:
         trade__conversation__seller=listing.seller,
         trade__status=Trade.Status.COMPLETED,
         direction=Review.Direction.BUYER_TO_SELLER,
+        visibility=Review.Visibility.PUBLIC,
     ).aggregate(average=Avg("rating"))
     has_active_trade = Trade.objects.filter(
         listing=listing,
@@ -378,7 +379,27 @@ def listing_create(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
         upload_error = _listing_upload_error(request)
         if upload_error:
-            return HttpResponse(upload_error, status=400, content_type="text/plain; charset=utf-8")
+            if not _post_fields_within(
+                request,
+                {"title": 150, "description": 5_000, "region": 100},
+            ):
+                return _invalid_request()
+            # Preserve safe text selections without rebinding rejected file
+            # objects, so template rendering cannot trigger image decoding.
+            form = ListingForm(request.POST or None)
+            return render(
+                request,
+                "market/listing_form.html",
+                {
+                    "form": form,
+                    "mode": "create",
+                    "preflight_error": (
+                        f"{upload_error} 보안을 위해 선택한 사진은 다시 골라 주세요. "
+                        "제목과 설명은 그대로 유지했습니다."
+                    ),
+                },
+                status=400,
+            )
         if not _consume_actor_limit(
             request.user,
             "listing-create",
@@ -467,7 +488,29 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
     if request.method == "POST":
         upload_error = _listing_upload_error(request)
         if upload_error:
-            return HttpResponse(upload_error, status=400, content_type="text/plain; charset=utf-8")
+            if not _post_fields_within(
+                request,
+                {"title": 150, "description": 5_000, "region": 100},
+            ):
+                return _invalid_request()
+            form = ListingForm(
+                request.POST or None,
+                instance=listing,
+            )
+            return render(
+                request,
+                "market/listing_form.html",
+                {
+                    "form": form,
+                    "listing": listing,
+                    "mode": "update",
+                    "preflight_error": (
+                        f"{upload_error} 보안을 위해 선택한 사진은 다시 골라 주세요. "
+                        "나머지 수정 내용은 그대로 유지했습니다."
+                    ),
+                },
+                status=400,
+            )
         if not _consume_actor_limit(
             request.user,
             "listing-update",
@@ -510,6 +553,26 @@ def listing_update(request: HttpRequest, pk) -> HttpResponse:
                     status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
                 ).exists():
                     raise PermissionDenied
+                submitted_revision = form.cleaned_data.get("revision")
+                current_revision = locked.updated_at.isoformat(timespec="microseconds")
+                if submitted_revision and submitted_revision != current_revision:
+                    security_logger.info(
+                        "listing_stale_update_rejected actor=%s listing=%s",
+                        request.user.pk,
+                        locked.pk,
+                    )
+                    form.add_error(
+                        None,
+                        "다른 화면에서 이 상품이 먼저 수정되었습니다. "
+                        "현재 페이지를 새로고침해 최신 내용을 확인한 뒤 다시 수정해 주세요. "
+                        "브라우저 보안상 선택한 새 사진은 다시 골라야 합니다.",
+                    )
+                    return render(
+                        request,
+                        "market/listing_form.html",
+                        {"form": form, "listing": locked, "mode": "update"},
+                        status=409,
+                    )
                 old_image_name = locked.image.name if locked.image else ""
                 old_price = locked.price_points
                 editable_fields = (
@@ -995,14 +1058,30 @@ def conversation_detail(request: HttpRequest, pk) -> HttpResponse:
         conversation.messages.select_related("sender").order_by("-created_at", "-pk")[:100]
     )
     latest_messages.reverse()
-    active_trade = (
+    listing_active_trade = (
         Trade.objects.filter(
-            conversation=conversation,
+            listing=conversation.listing,
             status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
         )
         .prefetch_related("reviews")
         .order_by("-created_at")
         .first()
+    )
+    active_trade = (
+        listing_active_trade
+        if listing_active_trade and listing_active_trade.conversation_id == conversation.pk
+        else None
+    )
+    other_active_trade_exists = bool(listing_active_trade and active_trade is None)
+    recent_closed_trade = (
+        Trade.objects.filter(
+            conversation=conversation,
+            status__in=(Trade.Status.REJECTED, Trade.Status.CANCELLED),
+        )
+        .order_by("-created_at")
+        .first()
+        if active_trade is None
+        else None
     )
     review_direction = (
         Review.Direction.BUYER_TO_SELLER
@@ -1028,6 +1107,8 @@ def conversation_detail(request: HttpRequest, pk) -> HttpResponse:
                 blocker=request.user, blocked=counterpart
             ).exists(),
             "active_trade": active_trade,
+            "other_active_trade_exists": other_active_trade_exists,
+            "recent_closed_trade": recent_closed_trade,
             "has_reviewed": has_reviewed,
         },
     )

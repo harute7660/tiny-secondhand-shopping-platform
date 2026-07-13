@@ -24,7 +24,7 @@ from .services import MAX_IMAGE_BATCH_BYTES, can_users_interact, process_listing
 
 class ProtectedListingImageInput(forms.ClearableFileInput):
     template_name = "market/widgets/protected_listing_image_input.html"
-    clear_checkbox_label = "현재 이미지 삭제"
+    clear_checkbox_label = "대표 사진 삭제 (추가 사진이 있으면 첫 사진이 대표로 이동)"
     initial_text = "현재 이미지"
     input_text = "새 이미지 선택"
 
@@ -69,6 +69,7 @@ class MultipleListingImageField(forms.Field):
 
 
 class ListingForm(forms.ModelForm):
+    revision = forms.CharField(required=False, max_length=64, widget=forms.HiddenInput)
     extra_images = MultipleListingImageField(
         required=False,
         label="추가 상품 사진",
@@ -135,22 +136,44 @@ class ListingForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        has_persisted_instance = bool(
+            self.instance and self.instance.pk and not self.instance._state.adding
+        )
         self.initial_defect_disclosure = (
             self.instance.defect_disclosure
-            if self.instance and self.instance.pk
+            if has_persisted_instance
             else Listing.DefectDisclosure.UNKNOWN
         )
         self.fields["defect_disclosure"].required = False
+        # Keep backward-compatible server fallback for omitted legacy requests,
+        # while avoiding a confusing blank option in the actual form UI.
+        self.fields["defect_disclosure"].choices = Listing.DefectDisclosure.choices
+        self.fields[
+            "defects"
+        ].help_text = (
+            "하자 있음일 때 한 항목 이상 선택해 주세요. 기타를 고르면 상세 설명도 필요합니다."
+        )
         extra_images = []
-        if self.instance and self.instance.pk:
+        if has_persisted_instance:
             extra_images = list(self.instance.extra_images.order_by("position"))
+            if not self.is_bound:
+                self.fields["revision"].initial = self.instance.updated_at.isoformat(
+                    timespec="microseconds"
+                )
             self.fields["defects"].initial = list(
                 self.instance.defects.values_list("code", flat=True)
             )
         self.existing_extra_images = extra_images
         self.fields["remove_extra_images"].choices = [
-            (str(item.pk), f"추가 사진 {index}") for index, item in enumerate(extra_images, start=2)
+            (str(item.pk), f"사진 {index}") for index, item in enumerate(extra_images, start=2)
         ]
+        self.existing_extra_image_options = list(
+            zip(
+                extra_images,
+                self["remove_extra_images"].subwidgets,
+                strict=True,
+            )
+        )
         if not extra_images:
             self.fields["remove_extra_images"].widget = forms.HiddenInput()
 
@@ -203,6 +226,11 @@ class ListingForm(forms.ModelForm):
             self.add_error("defects", "하자 있음으로 선택했다면 항목을 하나 이상 골라 주세요.")
         if disclosure != Listing.DefectDisclosure.PRESENT and defects:
             self.add_error("defects", "하자 항목은 하자 있음 상태에서만 선택할 수 있습니다.")
+        if disclosure != Listing.DefectDisclosure.PRESENT and not defects:
+            # Hidden conditional controls must not leave contradictory stale
+            # text behind when an owner changes the disclosure to no/unknown.
+            cleaned["defect_details"] = ""
+            details = ""
         if ListingDefect.Code.OTHER in defects and not details:
             self.add_error("defect_details", "기타 하자의 상세 내용을 입력해 주세요.")
         return cleaned
@@ -265,7 +293,7 @@ class ReviewForm(forms.ModelForm):
         private_patterns = (
             r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+",
             r"(?:https?://|www\.)\S+",
-            r"(?:\d[\s().-]?){7,}",
+            r"(?:\d[\s()./_-]?){7,}",
         )
         if any(re.search(pattern, body, flags=re.IGNORECASE) for pattern in private_patterns):
             raise forms.ValidationError(

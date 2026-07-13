@@ -4,7 +4,7 @@
 
 ## 상태와 위험도
 
-- 상태: `Open`, `Fixing`, `Fixed`, `Accepted`, `Not Reproducible`
+- 상태: `Open`, `Fixing`, `Fixed`, `Mitigated`, `Accepted`, `Not Reproducible`
 - 위험도: `Critical`, `High`, `Medium`, `Low`, `Informational`
 - `Accepted`는 이유, 영향, 보완 통제, 제거 계획이 모두 있어야 한다.
 
@@ -53,6 +53,12 @@
 | SEC-039 | 다중 이미지의 전체 개수·합계 용량 누락과 stale 삭제 필드 | Medium | Fixed | sanitizer 전 전역 제한·잠근 자식 재검사·대표 승격 |
 | SEC-040 | 추가 사진 child IDOR·내부 저장명·rollback orphan | High | Mitigated | 부모-자식 동시 scope·보호 응답·실패 시 신규 파일 정리 |
 | SEC-041 | 위조 하자 코드와 신고 다중 증거·관리자 열람 경계 누락 | High | Mitigated | 허용목록·전체 snapshot·report-scoped 무결성 검증 route |
+| SEC-042 | `PENDING` 후기가 판매자 공개 평균에 조기 반영 | Medium | Fixed | `PUBLIC` 후기만 목록·개수·평균에 포함 |
+| SEC-043 | `/` 구분 전화번호가 후기 개인정보 패턴을 우회 | Medium | Mitigated | 숫자 구분자 허용목록에 slash 추가·회귀 |
+| SEC-044 | 오래 열린 Listing Admin 폼이 새 차단 상태를 덮어씀 | High | Fixed | 잠근 최신 행과 보호 필드 비교·허용 필드만 복사 |
+| SEC-045 | multipart 전체 body 제한이 view/form 파싱 뒤에만 적용 | Medium | Mitigated | CSRF 전 21MiB 선차단·실제 chunk 누적 handler·안전 400 |
+| SEC-046 | 조건부 하자 입력의 stale·모순 상태와 불명확한 오류·제출 피드백 | Low | Fixed | 조건부 활성화·초기화, 서버 독립 검증·정규화, 오류 요약·제출 잠금 |
+| SEC-047 | 두 탭 상품 수정의 lost update와 상품 전체 거래·현재 대화 CTA 불일치 | Medium | Mitigated | hidden revision+잠근 `updated_at` 409, 다른 거래 CTA·상대 신원 비공개, 현재 대화 닫힘 기록 |
 
 ### SEC-001 - 신고 대상의 모델 검증 전 서버 바인딩 누락
 
@@ -301,7 +307,7 @@
 - 수정 전 보완: 저장 transaction이 rollback되고 commit 후 삭제 callback도 실행되지 않아 재현 시 기존 DB 이미지와 파일은 손실되지 않았다.
 - 변경·선택 이유: 잠근 최신 `Listing` 행에 text field는 허용목록으로 복사하되 이미지 값은 `Listing._meta.get_field("image").save_form_data(locked, cleaned_image)`에 전달한다. Django가 정의한 `False`→빈 파일명 정규화를 그대로 사용하므로 framework sentinel 의미를 중복 구현하지 않고, boolean을 FileField descriptor에 직접 대입하지 않는다. transaction·commit callback 기반의 기존 파일 생명주기는 유지했다.
 - 검증: `test_update_without_image_input_keeps_existing_image`, `test_update_clear_image_uses_filefield_normalization_and_removes_file`, `test_update_replaces_existing_image_and_removes_superseded_file`, `test_update_rejects_clear_and_upload_contradiction_without_changing_image`, `test_update_rejects_invalid_image_without_changing_existing_image`, 신고 snapshot 증거 보존 테스트를 포함한 표적 회귀에 통과했다. 실제 브라우저에서도 이미지가 있는 임시 상품에서 `비우기`를 선택해 저장한 뒤 상세 placeholder, DB 빈 값, 기존 파일 삭제, traceback 0건을 확인하고 QA 데이터를 제거했다.
-- 상태: **Fixed**. 해당 수정 직후인 2026-07-13 관련 87개 표적 테스트와 당시 전체 168개가 통과했고 coverage는 94%였다. 후속 첨부 widget 변경을 포함한 최신 통합 수치는 아래 최종 품질 게이트에 별도로 기록했다.
+- 상태: **Fixed**. 해당 수정 직후인 2026-07-13 관련 87개 표적 테스트와 당시 전체 168개가 통과했고 coverage는 94%였다. 후속 첨부 widget·확장 기능 시점의 통합 기준선과 SEC-042~047 표적 결과는 아래 품질 게이트에 구분해 기록했다.
 
 ### SEC-032 - DEBUG 기술 오류 화면의 내부정보 노출
 
@@ -404,9 +410,76 @@
 - 잔여 위험: 증거 보존기간·법적 삭제·승인자 분리와 접근로그 보관 기준은 아직 운영 정책이 필요하다. 현재 관리자 표적 회귀는 report-scope를 검증했으며 oversized·digest mismatch 다중 증거 분기는 기존 단일 증거 검사와 공유하지만 별도 회귀를 추가할 가치가 있다.
 - 상태: **Mitigated**. 입력·snapshot·관리자 조회의 기술 경계는 적용했고 증거 lifecycle 정책은 남아 있다.
 
+### SEC-042 - 비공개 후기가 판매자 공개 평균에 조기 반영
+
+- 발견 단계/방법: 쌍방 blind 후기의 첫 번째 제출 직후 공개 프로필 본문은 숨겨졌지만 상품 상세의 판매자 평균과 공개 프로필 집계가 변하는지 적대적으로 점검했다.
+- KISA/CWE 연결: 중요정보 노출, 잘못된 공개 상태 처리, CWE-200.
+- 영향: 첫 후기 본문을 직접 공개하지 않아도 평균·개수 변화로 제출 여부와 평점을 추론할 수 있어 blind publication이 약해지고 상대의 보복성 후기 판단에 단서가 된다.
+- 변경: 공개 프로필의 받은 후기 queryset과 판매자 평점 집계 모두 `Review.Visibility.PUBLIC`만 포함하도록 통일했다. 첫 후기가 `PENDING`인 동안 공개 개수는 0, 평균은 `None`으로 유지하고 양쪽 제출 뒤 두 후기가 `PUBLIC`이 된 뒤에만 반영한다.
+- 검증: `test_reviews_are_server_direction_bound_blind_published_and_unique`가 첫 제출 직후 프로필 `review_count=0`, 상품 상세 `seller_average_rating=None`, 평균 문구 비노출과 쌍방 제출 뒤 동시 공개를 확인했다.
+- 잔여 위험: 운영자나 DB 관리자는 비공개 후기를 열람할 수 있으므로 최소권한·접근로그와 후기 숨김/이의제기 정책이 필요하다.
+- 상태: **Fixed**. 공개 본문과 집계가 같은 visibility 경계를 사용한다.
+
+### SEC-043 - slash 구분 전화번호의 후기 개인정보 필터 우회
+
+- 발견 단계/방법: 전화번호를 `010-1234-5678`뿐 아니라 `010/1234/5678`처럼 흔한 구분자로 바꿔 후기 입력 검사를 우회할 수 있는지 확인했다.
+- KISA/CWE 연결: 입력데이터 검증, 개인정보 노출 최소화, CWE-20·CWE-200.
+- 영향: 공개 후기에 전화번호가 저장되어 연락처 노출·외부 유도·스팸에 악용될 수 있다.
+- 변경: 7자리 이상 숫자열을 탐지하는 구분자 허용목록에 `/`를 포함해 공백·괄호·점·밑줄·하이픈·slash로 나눈 숫자도 거부한다. 이메일·URL과 길이 제한은 그대로 유지한다.
+- 검증: `test_review_rejects_common_public_pii_patterns`에 `010/1234/5678`을 추가했고 개인정보 오류 400과 후기 미생성을 확인했다.
+- 잔여 위험: 정규식은 문자 치환·한글 숫자·이미지 속 연락처·문맥상 개인정보를 완전히 판별하지 못하고 정상 숫자를 오탐할 수 있다. 신고·숨김·이의제기 절차는 여전히 필요하다.
+- 상태: **Mitigated**. 확인한 slash 우회는 막았지만 자동 PII 탐지 자체는 보조 통제다.
+
+### SEC-044 - 오래 열린 Listing Admin 수정의 moderation 상태 덮어쓰기
+
+- 발견 단계/방법: 관리자가 상품 수정 폼을 연 뒤 다른 관리자 또는 자동 신고 임계치가 같은 상품을 `BLOCKED`로 바꾸고, 오래 열린 폼을 저장하는 TOCTOU 시나리오를 재현했다.
+- KISA/CWE 연결: 경쟁조건, 부적절한 인가·상태 검증, CWE-362·CWE-285.
+- 영향: stale Admin 객체가 최신 `status`, 차단 사유·처리자·시각을 덮어써 차단 상품을 다시 노출하거나 감사 근거를 소실할 수 있다.
+- 변경: `ListingAdmin.save_model()`에서 현재 행을 `select_for_update()`로 다시 읽고 seller·status·차단 처리자·사유·시각을 폼 instance와 비교한다. 불일치나 form 없는 변경은 거부하고, 일치하는 경우에도 명시한 편집 가능 필드만 잠긴 최신 객체로 복사해 저장한다.
+- 검증: `test_stale_admin_change_cannot_overwrite_new_blocked_state`가 `PermissionDenied`, 최신 `BLOCKED`·차단 사유 유지, 오래된 제목 미반영을 확인했다. `TradeReviewSecurityTests`와 `ListingAdminSecurityTests` 합계 **16개 / 17.393초 / system check 0건**도 통과했다.
+- 잔여 위험: SQLite의 `select_for_update()`는 실질적인 행 잠금을 제공하지 않는다. 다중 사용자 운영 전 PostgreSQL에서 두 Admin·자동 moderation 동시 저장 부하를 다시 검증해야 한다.
+- 상태: **Fixed**. 애플리케이션의 stale overwrite 경계는 거부하지만 운영 동시성 보장은 PostgreSQL 전환을 전제로 한다.
+
+### SEC-045 - multipart 요청 전체 크기의 파싱 전 자원고갈 경계 누락
+
+- 발견 단계/방법: 다중 이미지의 5장·20MB Form 검사를 재검토하면서 CSRF middleware가 view보다 먼저 `request.POST`를 파싱하고, `Content-Length`가 없거나 축소된 chunked 요청은 view의 합계 검사 전에 Django upload handler까지 도달하는 경로를 확인했다.
+- KISA/CWE 연결: 시스템 자원 접근·입력데이터 크기 검증, CWE-400.
+- 영향: 공격자가 큰 multipart POST·PUT·PATCH 또는 여러 파일의 누적 body를 반복 전송해 폼의 20MB 검사 전에 네트워크·parser·임시 저장소·worker 자원을 소비할 수 있다. `Content-Length`만 신뢰하면 축소·누락 헤더로 조기 제한을 우회할 수 있다.
+- 변경: `MultipartUploadLimitMiddleware`를 CSRF보다 앞에 두고 알려진 `Content-Length`가 21MiB를 넘으면 downstream·body read 전에 거부한다. 길이가 누락·chunked·축소된 경우에는 가장 앞의 `CumulativeUploadLimitHandler`가 파일마다 reset되는 `start` 대신 요청 전체 실제 chunk byte를 누적해 같은 상한을 적용한다. POST·PUT·PATCH만 대상으로 하며 초과 응답은 내부 예외명·limit 문구 없이 기존 일반 400과 CSP·`nosniff`·frame `DENY`·`private, no-store`를 사용한다. 기존 6MiB data memory, 5MiB file memory, 최대 5파일과 이미지 합계 20MB 검사는 심층 경계로 유지한다.
+- 검증: `MultipartUploadLimitTests` **7개 / 0.023초**가 middleware 순서·기존 정책, 세 write method의 known-length 조기 거부와 downstream 미호출, 여러 파일 누적, 축소·누락·chunked 길이, 정상 multipart 통과, 오류 진단정보 비노출·보안 헤더를 확인했다.
+- 잔여 위험: 이 제한은 Django에 도달한 요청을 보호한다. reverse proxy가 application보다 먼저 큰 body를 수신하는 비용, 느린 업로드와 연결 수 고갈은 proxy의 body/time/connection limit과 실제 부하 시험으로 별도 통제해야 한다.
+- 상태: **Mitigated**. 애플리케이션 pre-parser 경계는 적용했으며 upstream 인프라 자원 통제가 남아 있다.
+
+### SEC-046 - 조건부 하자 입력의 stale·모순 상태와 불명확한 오류·제출 피드백
+
+- 발견 단계/방법: 상품 등록·수정 사용성 검토에서 `하자 없음`·`확인하지 못함`에도 하자 체크와 상세가 항상 보여 입력 관계가 불명확하고, 상태 변경 뒤 숨겨야 할 상세 문구가 브라우저나 요청에 남을 수 있는 흐름을 점검했다. 서버 오류 뒤 화면이 다시 렌더링되어도 전체 원인·오류 위치·처리 중 상태가 충분히 드러나지 않아 사용자가 새로고침 실패로 오인하거나 제출을 반복할 가능성도 확인했다.
+- KISA/CWE 연결: 입력데이터 검증·보안기능 결정의 신뢰 경계·오류 처리, CWE-20. 접근성·중복 제출 피드백은 직접 권한 우회라기보다 안전한 입력 검증을 사용자가 올바르게 수행하게 하는 품질 통제다.
+- 영향: 하자 상태와 체크·상세가 모순된 고지가 저장되거나 오래된 상세가 의도와 다르게 남을 수 있고, 클라이언트 동작만 신뢰하면 crafted POST로 조건을 우회할 수 있다. 오류를 인지하지 못한 반복 제출은 불필요한 요청·파일 처리와 사용자 혼동을 만든다.
+- 변경: `PRESENT`에서만 관련 그룹을 표시·활성화하고, 비-`PRESENT`로 바꿀 때 checkbox·상세를 비활성화·초기화한다. `OTHER` 선택 시 상세에 native `required`를 적용하고 폼의 기본 HTML 검증을 복구했다. 서버 `ListingForm.clean()`은 JavaScript와 무관하게 `PRESENT`의 항목 필수, 비-`PRESENT`의 항목 거부, code 허용목록을 유지하며 정상 비-`PRESENT` 요청의 stale 상세를 빈 값으로 정규화한다. 서버 오류는 전체 필드 요약·입력 링크에 모아 포커스·스크롤하고, 오류가 있는 조건부 그룹은 펼친다. 유효한 제출 뒤 버튼은 `aria-busy`·disabled·`저장 중…` 상태로 바꾼다.
+- 검증: `MultiImageDefectSecurityTests`의 하자 추가→비-`PRESENT` 수정·stale 상세 제거 회귀를 포함해 `MultiImageDefectSecurityTests`·`MultipartUploadLimitTests`·`ListingAdminSecurityTests`·`TradeReviewSecurityTests` 최신 결합 **40개 / 17.697초 / system check 0건 / Ruff PASS**가 통과했다. 템플릿·스크립트에서 오류 요약 링크, `novalidate` 부재, 조건부 disabled/clear, `OTHER` required, 제출 잠금도 함께 확인했다.
+- 잔여 위험: JavaScript가 꺼진 환경에서는 모든 조건부 입력의 점진적 UX 대신 서버 오류에 의존하지만 서버 불변조건은 유지된다. 실제 키보드·스크린리더·200% 확대에서 오류 요약 이동과 동적 required 안내는 제출 전 수동 인수가 필요하다.
+- 상태: **Fixed**. 저장 무결성은 서버에서 보장하고 조건부 입력·오류·중복 제출 피드백을 보강했으며 실제 보조기술 인수는 별도 품질 게이트로 남긴다.
+
+### SEC-047 - 두 탭 상품 수정의 lost update와 거래 상태·CTA 불일치
+
+- 발견 단계/방법: 상품 수정 화면을 두 탭에서 연 뒤 한 탭이 먼저 가격·하자·제목을 저장하고 다른 탭이 오래된 폼을 제출하는 흐름, 한 상품의 여러 구매자 대화 중 한 대화에서 완료 확인이 진행될 때 나머지 대화 화면을 대조했다.
+- KISA/CWE 연결: 경쟁조건·데이터 무결성·인가 결정의 최신 상태 검증, CWE-362·CWE-367. 다른 거래 상대의 식별정보 최소화는 개인정보 노출 경계와도 연결된다.
+- 영향: 마지막 요청이 조용히 이기면 먼저 저장한 가격·하자·제목이 사라지고 가격 하락 알림 event의 근거도 사용자의 의도와 어긋날 수 있다. 상품 전체의 활성 거래와 현재 대화의 거래를 구분하지 않으면 무관한 대화에 완료 CTA가 나타나 잘못된 요청을 유도하거나 진행 상대를 추론하게 할 수 있다.
+- 변경: 수정 GET에서 `updated_at` microseconds 값을 hidden `revision`으로 제공한다. POST transaction 안에서 상품 행을 잠근 뒤 최신 revision과 비교하고 다르면 어느 편집 필드·파일·하자·알림도 저장하지 않은 채 409와 일반 오류 요약·사진 재선택 안내를 반환한다. 거래 대화는 상품 전체 활성 거래를 한 번 조회한 뒤 현재 conversation과 일치하는 경우만 `active_trade`로 전달하며, 다른 대화의 활성 거래는 boolean 안내만 제공해 완료·후기 CTA와 상대 식별정보를 숨긴다. 현재 대화에 최근 `REJECTED`·`CANCELLED`가 있으면 그 상태·시각만 표시한다.
+- 검증: `test_stale_browser_revision_returns_conflict_without_overwrite`가 409·최신 제목 유지와 비저장을 확인했다. 거래 후기 회귀는 다른 대화의 진행 안내·CTA 비노출·신원 비공개와 현재 대화의 거절·취소 기록을 확인한다. 관련 네 테스트 class의 최신 결합 결과는 **40개 / 17.697초 / system check 0건**, Ruff PASS이며 변경 후 전체 Django tests도 **219 / 219 / 157.165초 / system check 0건**으로 통과했다.
+- 잔여 위험: 브라우저 폼은 revision을 항상 보내지만 기존 호환을 위해 revision이 없는 인증 소유자 요청까지 강제 거부하지 않는다. SQLite의 `select_for_update()`도 실질 행 잠금을 제공하지 않는다. 운영 API에서는 revision 또는 `If-Match`를 필수화하고 PostgreSQL에서 두 요청의 실제 경합을 재시험해야 한다.
+- 상태: **Mitigated**. 일반 브라우저의 lost update와 잘못된 CTA·상대 노출은 통제했지만 revision 누락 호환과 개발 DB 동시성 한계가 남는다.
+
+### UX-001 - 업로드 대상·오류·처리 중 피드백의 불일치
+
+- 발견: preflight에서 거부된 파일을 같은 bound form에 다시 넣으면 재디코딩 비용과 중복 오류 가능성이 있고, 파일 input은 브라우저 보안상 복원되지 않는데도 텍스트와 사진의 유지 여부가 분명하지 않았다. 추가 사진 썸네일·삭제 checkbox·번호가 시각적으로 느슨했고 대표 삭제 뒤 승격 규칙도 예측하기 어려웠다. 상품·메시지·후기 폼의 오류 요약·포커스·native validation·submit lock도 일관되지 않았다.
+- 변경: preflight 오류 시 거부 파일 객체를 bind·디코딩하지 않고 제한을 통과한 텍스트만 유지하며 사진 재선택을 명시한다. 브라우저는 5장·5MiB/장·20MiB를 사전 안내하고, 6파일 위조는 Django parser의 진단 없는 일반 400으로 처리한다. 추가 사진은 보호 썸네일·연속 번호·삭제 checkbox를 같은 label로 결합하고 대표 승격 안내를 추가했다. 세 폼은 공통 오류 summary partial과 focus, native validation, 유효 제출 중 버튼 잠금을 공유한다.
+- 보안 경계: 클라이언트 크기 검사와 submit lock은 보조 UX이며 서버의 5파일 parser, 21MiB middleware, preflight·sanitizer·Form·CSRF·rate limit을 대체하지 않는다. 오류 응답은 거부 파일명 외 내부 저장명·예외·limit 구현을 노출하지 않는다.
+- 증적: 최신 결합 **40개 / 17.697초 / system check 0건 / Ruff PASS**. 실제 키보드·스크린리더·200% 확대와 브라우저 파일 선택 조합 전수 인수는 제출 전 수동 항목으로 남긴다.
+
 ## 2026-07-13 신규 기능의 위협 검토와 예방 통제
 
-기능을 의도적으로 취약하게 만든 뒤 고친 것은 아니다. SEC-034~041은 기존 직접 상태 변경 경로와 신규 기능의 구현·적대적 테스트에서 실제로 확인한 공격 경계를 기록했고, 아래 표는 구현 전에 식별해 같은 변경에서 예방한 추가 통제를 별도로 정리한다.
+기능을 의도적으로 취약하게 만든 뒤 고친 것은 아니다. SEC-034~047은 기존 직접 상태 변경 경로와 신규 기능의 구현·적대적 테스트·후속 UI 감사에서 실제로 확인한 공격 경계를 기록했고, 아래 표는 구현 전에 식별해 같은 변경에서 예방한 추가 통제를 별도로 정리한다.
 
 | 기능 | 식별한 위험 | 적용한 통제 | 표적 증적 |
 |---|---|---|---|
@@ -416,7 +489,8 @@
 | 신고 누적 자동조치 | 중복·자기신고·공모에 의한 서비스거부, 관리자 lockout, 경합, 영구삭제 오탐 | 서로 다른 3 OPEN reporter, 조건부 UNIQUE, 자기/판매자 제외, target row lock·atomic, staff/superuser 보호, 임시 제재·감사로그·권한 복구 | 중복 미집계·3인 threshold·safe redirect·보호계정·자동복구·수동차단 불변 회귀 |
 | 쌍방 후기 | 단독 완료·buyer 위조·IDOR·보복 후기·PII/XSS | conversation-bound Trade, buyer confirm, server direction, blind publication, primitive 공개 허용목록 | 완료/거절·legacy SOLD·제3자·완료 mutation·사후 block·blind/unique·PII/XSS 회귀 |
 | 관심 검색·가격 하락 알림 | IDOR·비공개 metadata·소급·중복·rollback 유령·fan-out DoS | owner scope, 현재 공개성, 구조화 event, created-at 경계, recipient UNIQUE, on-commit, quota/batch | 소유자·private card·중복 조건·late subscription·locked price·exclude·idempotence 회귀 |
-| 다중 사진·하자·신고 증거 | 파일 수/합계 우회·stale child ID·orphan·XSS·증거 소실·Admin child IDOR | 전체 batch limit, locked child scope, protected route, rollback cleanup, defect allowlist, multi-hash snapshot, report-scoped Admin | 5장/20MB·unexpected field·foreign child·orphan·XSS·삭제 보존·Admin scope 회귀 |
+| 다중 사진·하자·신고 증거 | multipart 파싱 전 자원고갈·파일 수/합계 우회·stale child/revision·orphan·상태/상세 모순·XSS·증거 소실·Admin child IDOR | CSRF 전 21MiB+실제 chunk 누적, client 5장/5MiB/20MiB 보조 검사, 거부 파일 미결합, locked child+revision scope, protected route, rollback cleanup, 조건부 UI+서버 defect allowlist·stale 정규화, multi-hash snapshot, report-scoped Admin | 최신 결합 표적 40개에서 preflight·multipart·foreign child·대표 승격·두 탭 409·하자 add→clear·XSS·삭제 보존·Admin scope 회귀 |
+| 거래 대화 상태·공통 폼 피드백 | 상품 전체 거래와 현재 대화 혼동, 다른 상대 추론, 오류 위치 미인지·중복 제출 | current/other trade 분리, 다른 거래 CTA·상대 비공개, 현재 대화 닫힘 기록, 공통 오류 summary/focus/native validation/submit lock | 최신 거래 후기·템플릿 표적에서 다른 거래·거절·취소·폼 피드백 회귀 |
 
 ## 자동검사 증적
 
@@ -433,13 +507,36 @@
 - 실행 3: 실패 이벤트 재처리 명령과 완료 거래 자동차단 복구 **2개 통과**
 - 해석: SEC-034~041과 ADR-017~019의 직접 분기 36개 증적이다. 실운영 PostgreSQL 부하·브라우저 UX를 검증한 결과는 아니며, 전체 영향은 아래 최신 통합 품질 게이트로 별도 확인했다.
 
-### 2026-07-13 세 기능 포함 최신 통합 품질 게이트
+### 2026-07-13 후속 보안 변경 직전 통합 품질 게이트
 
 - Django 비계측 전체 tests: **206개 통과 / 114.641초 / system check 문제 0건**
 - Coverage 계측 실행: **206개 통과 / 115.434초 / 5,778 statements / 343 miss / 94%**
 - Ruff: lint 오류 0건, 46개 파일 format 일치
 - Bandit·pip-audit·deploy check: 이슈·알려진 취약점·경고 0건
-- migration drift·`git diff --check`: 문제 0건, CSS 중괄호 987/987
+- migration drift·`git diff --check`: 문제 0건, 당시 CSS 중괄호 987/987
+
+### 2026-07-13 SEC-042~044 후속 표적 회귀
+
+- 실행: `python manage.py test market.test_trade_reviews market.tests.ListingAdminSecurityTests --verbosity 1`
+- 결과: **16개 통과 / 17.393초 / system check 문제 0건**
+- UI 정적 확인: 웜톤 최종 cascade 적용 후 CSS 중괄호 열림/닫힘 균형 확인
+- 판정 경계: 위 16개는 세 후속 보안 분기의 직접 증적이다. 이후 최종 전체 219개·Coverage 94%와 정적·공급망·deploy·migration·Node syntax·diff 게이트도 통과했으며, 직전 206개 결과는 역사적 기준선으로만 보존한다.
+
+### 2026-07-13 SEC-045 multipart 요청 상한 표적 회귀
+
+- 실행: `python manage.py test config.tests.MultipartUploadLimitTests --verbosity 1`
+- 결과: **7개 통과 / 0.023초 / system check 문제 0건**
+- 판정 경계: pre-parser application 제한의 직접 증적이며 reverse proxy·slow upload 부하 시험과 변경 후 전체 품질 게이트를 대신하지 않는다.
+
+### 2026-07-13 SEC-042~047 최신 결합 표적 회귀
+
+- 실행 대상: `MultiImageDefectSecurityTests`, `MultipartUploadLimitTests`, `ListingAdminSecurityTests`, `TradeReviewSecurityTests`
+- 결과: **40개 통과 / 17.697초 / system check 문제 0건**, Ruff PASS
+- 포함 분기: `PUBLIC` 후기 집계, slash PII, stale Admin 보호, multipart 요청 상한, 거부 파일 미결합·사진 재선택, 6파일 generic 400, client 5장·5MiB·20MiB 검증, 썸네일-삭제 직접 결합·대표 승격 안내, 하자 add→clear, 두 탭 revision 409, 다른 거래 CTA·신원 비공개, 현재 대화 거절·취소 기록, 상품·메시지·후기 공통 오류·submit lock.
+- 후속 전체 Django tests: **219 / 219 통과 / 157.165초 / system check 문제 0건**
+- 후속 Coverage: **219 / 219 통과 / 162.533초 / 6,037 statements / 354 miss / 94%**
+- 후속 기타 게이트: **Ruff lint PASS·46 files formatted, Bandit 0, pip-audit 알려진 취약점 0, Django check·deploy warning 0, migration no changes, Node JavaScript syntax·`git diff --check` PASS**
+- 판정 경계: 로컬 자동 품질 게이트는 통과했지만 실제 키보드·스크린리더 인수와 운영 PostgreSQL·proxy 부하 시험을 대신하지 않는다.
 
 ### 2026-07-13 신규 세 기능 추가 전 통합 품질 게이트
 

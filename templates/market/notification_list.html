@@ -12,6 +12,7 @@
     <div class="notification-list">
       {% for notification in notifications %}
         <article class="notification-item{% if not notification.read_at %} is-unread{% endif %}">
+          {% if not notification.read_at %}<span class="sr-only">읽지 않음</span>{% endif %}
           <span class="notification-kind">{% if notification.listing_visible %}{% if notification.event.kind == 'PRICE_DROP' %}PRICE DROP{% else %}NEW MATCH{% endif %}{% else %}PRIVATE{% endif %}</span>
           <div>
             {% if notification.listing_visible %}

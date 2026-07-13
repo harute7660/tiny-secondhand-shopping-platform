@@ -1,4 +1,5 @@
 import hashlib
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,6 +11,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from PIL import Image
 
 from .forms import ListingForm
@@ -99,6 +101,16 @@ class MultiImageDefectSecurityTests(TestCase):
                 self.assertNotIn("representative.png", stored_name)
                 self.assertNotIn("extra-", stored_name)
 
+    def test_new_listing_form_handles_unsaved_uuid_instance(self):
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse("market:listing_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "market/listing_form.html")
+        self.assertIn("revision", response.context["form"].fields)
+        self.assertContains(response, "data-listing-form", html=False)
+
     def test_six_files_are_rejected_before_image_sanitizing(self):
         self.client.force_login(self.alice)
         data = self.listing_data(
@@ -129,6 +141,9 @@ class MultiImageDefectSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertContains(response, "이미지 파일 합계", status_code=400)
+        self.assertTemplateUsed(response, "market/listing_form.html")
+        self.assertContains(response, data["title"], status_code=400)
+        self.assertContains(response, "선택한 사진은 다시 골라 주세요", status_code=400)
         sanitizer.assert_not_called()
 
     def test_unexpected_file_field_is_rejected_before_sanitizing(self):
@@ -287,6 +302,72 @@ class MultiImageDefectSecurityTests(TestCase):
             set(listing.defects.values_list("code", flat=True)),
             {ListingDefect.Code.SCRATCH_DENT, ListingDefect.Code.OTHER},
         )
+
+    def test_owner_can_add_then_clear_defects_during_listing_update(self):
+        listing = self.create_listing(
+            title="하자 수정 회귀 테스트",
+            defect_disclosure=Listing.DefectDisclosure.NONE_KNOWN,
+        )
+        self.client.force_login(self.alice)
+        update_url = reverse("market:listing_update", args=[listing.pk])
+
+        add_response = self.client.post(
+            update_url,
+            self.listing_data(
+                title=listing.title,
+                defect_disclosure=Listing.DefectDisclosure.PRESENT,
+                defects=[ListingDefect.Code.SCRATCH_DENT],
+                defect_details="오른쪽 모서리에 작은 긁힘이 있습니다.",
+            ),
+        )
+
+        self.assertEqual(add_response.status_code, 302)
+        listing.refresh_from_db()
+        self.assertEqual(listing.defect_disclosure, Listing.DefectDisclosure.PRESENT)
+        self.assertEqual(listing.defect_details, "오른쪽 모서리에 작은 긁힘이 있습니다.")
+        self.assertSetEqual(
+            set(listing.defects.values_list("code", flat=True)),
+            {ListingDefect.Code.SCRATCH_DENT},
+        )
+
+        clear_response = self.client.post(
+            update_url,
+            self.listing_data(
+                title=listing.title,
+                defect_disclosure=Listing.DefectDisclosure.NONE_KNOWN,
+                defect_details="브라우저에 남아 있던 숨김 입력",
+            ),
+        )
+
+        self.assertEqual(clear_response.status_code, 302)
+        listing.refresh_from_db()
+        self.assertEqual(listing.defect_disclosure, Listing.DefectDisclosure.NONE_KNOWN)
+        self.assertEqual(listing.defect_details, "")
+        self.assertFalse(listing.defects.exists())
+
+    def test_stale_browser_revision_returns_conflict_without_overwrite(self):
+        listing = self.create_listing(title="두 탭 수정 원본")
+        self.client.force_login(self.alice)
+        update_url = reverse("market:listing_update", args=[listing.pk])
+        edit_page = self.client.get(update_url)
+        stale_revision = edit_page.context["form"]["revision"].value()
+
+        Listing.objects.filter(pk=listing.pk).update(
+            title="다른 탭이 먼저 저장한 제목",
+            updated_at=timezone.now() + timedelta(seconds=1),
+        )
+        response = self.client.post(
+            update_url,
+            self.listing_data(
+                title="오래 열린 탭의 제목",
+                revision=stale_revision,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertContains(response, "다른 화면에서 이 상품이 먼저 수정", status_code=409)
+        listing.refresh_from_db()
+        self.assertEqual(listing.title, "다른 탭이 먼저 저장한 제목")
 
     def test_defect_details_are_escaped_on_detail_page(self):
         payload = '<script>alert("defect")</script>\n<img src=x onerror=alert(1)>'

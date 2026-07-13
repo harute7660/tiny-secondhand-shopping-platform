@@ -16,8 +16,8 @@
 <section class="shell form-layout">
   <article class="form-card form-card-wide">
     <div class="form-card-heading"><span class="step-badge" aria-hidden="true">01</span><div><h2>거래 후기 작성</h2><p>연락처·주소·계좌 등 개인정보는 적지 마세요.</p></div></div>
-    {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
-    <form method="post" class="stack-form review-form" novalidate>
+    {% include "includes/form_error_summary.html" %}
+    <form method="post" class="stack-form review-form" data-secure-form>
       {% csrf_token %}
       {% for field in form.visible_fields %}
         <div class="field-group{% if field.errors %} field-error{% endif %}">
@@ -28,7 +28,7 @@
           {% if field.errors %}<div role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
-      <div class="form-actions"><a class="button button-quiet" href="{% url 'market:conversation_detail' trade.conversation_id %}">취소</a><button class="button button-primary" type="submit">후기 등록</button></div>
+      <div class="form-actions"><a class="button button-quiet" href="{% url 'market:conversation_detail' trade.conversation_id %}">취소</a><button class="button button-primary" type="submit" data-submit-button data-pending-label="등록 중…">후기 등록</button></div>
     </form>
   </article>
   <aside class="form-aside"><div class="tip-card"><span class="tip-number" aria-hidden="true">i</span><h2>공개 범위</h2><p>양쪽 후기가 모두 제출된 뒤 평점·본문·작성일과 거래 당시 역할만 공개합니다. 상품명·가격·지역·대화 내용은 표시하지 않습니다.</p></div></aside>

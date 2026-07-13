@@ -118,7 +118,10 @@ class ListingSecurityTests(MarketTestCase):
             response,
             reverse("market:listing_image", args=[self.listing.pk]),
         )
-        self.assertContains(response, "현재 이미지 삭제")
+        self.assertContains(
+            response,
+            "대표 사진 삭제 (추가 사진이 있으면 첫 사진이 대표로 이동)",
+        )
         self.assertNotContains(response, "internal-storage-name.jpg")
         self.assertNotContains(response, settings.MEDIA_URL)
 
@@ -725,6 +728,33 @@ class ListingAdminSecurityTests(MarketTestCase):
             )
 
         self.assertFalse(Listing.objects.filter(pk=stale_listing.pk).exists())
+
+    def test_stale_admin_change_cannot_overwrite_new_blocked_state(self):
+        form = ListingAdminForm(
+            data={**self._listing_form_data(self.listing), "title": "오래 열린 관리자 수정"},
+            instance=self.listing,
+        )
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        stale_listing = form.save(commit=False)
+        Listing.objects.filter(pk=self.listing.pk).update(
+            status=Listing.Status.BLOCKED,
+            blocked_reason="동시 신고로 새로 차단됨",
+            blocked_by=self.administrator,
+            blocked_at=timezone.now(),
+        )
+
+        with self.assertRaises(PermissionDenied):
+            self.listing_admin.save_model(
+                self.request,
+                stale_listing,
+                form,
+                change=True,
+            )
+
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.BLOCKED)
+        self.assertEqual(self.listing.blocked_reason, "동시 신고로 새로 차단됨")
+        self.assertNotEqual(self.listing.title, "오래 열린 관리자 수정")
 
     def test_hard_delete_requires_both_delete_and_purge_permissions(self):
         permission_sets = (

@@ -1,15 +1,25 @@
 import importlib.util
 import os
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
 from django.core.checks import run_checks
-from django.core.exceptions import ImproperlyConfigured, PermissionDenied, SuspiciousOperation
+from django.core.exceptions import (
+    ImproperlyConfigured,
+    PermissionDenied,
+    RequestDataTooBig,
+    SuspiciousOperation,
+)
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.handlers.asgi import ASGIRequest
 from django.http import Http404, HttpResponse, HttpResponseNotAllowed, JsonResponse
-from django.test import Client, SimpleTestCase, override_settings
+from django.test import Client, RequestFactory, SimpleTestCase, override_settings
+from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from django.urls import path
 
+from .middleware import CumulativeUploadLimitHandler, MultipartUploadLimitMiddleware
 from .settings import env_bool
 from .urls import urlpatterns as application_urlpatterns
 
@@ -53,6 +63,16 @@ def csrf_probe_view(request):
     return HttpResponse("accepted")
 
 
+def multipart_probe_view(request):
+    files = request.FILES.getlist("files")
+    return JsonResponse(
+        {
+            "file_count": len(files),
+            "file_bytes": sum(upload.size for upload in files),
+        }
+    )
+
+
 def ordinary_bad_response_view(request):
     return JsonResponse({"field": ["사용자에게 보여 줄 검증 오류"]}, status=400)
 
@@ -77,6 +97,7 @@ urlpatterns = [
     path("__test__/forbidden/", forbidden_view),
     path("__test__/missing/", missing_view),
     path("__test__/csrf/", csrf_probe_view),
+    path("__test__/multipart/", multipart_probe_view),
     path("__test__/ordinary-400/", ordinary_bad_response_view),
     path("__test__/ordinary-404/", ordinary_missing_response_view),
     path("__test__/method/", method_not_allowed_view),
@@ -214,6 +235,174 @@ class ErrorResponseAssertions:
         for marker in forbidden_markers:
             with self.subTest(marker=marker):
                 self.assertNotIn(marker.lower(), body)
+
+
+@override_settings(
+    DEBUG=True,
+    MIDDLEWARE=TEST_MIDDLEWARE,
+    ROOT_URLCONF=__name__,
+    SECURE_SSL_REDIRECT=False,
+)
+class MultipartUploadLimitTests(ErrorResponseAssertions, SimpleTestCase):
+    def setUp(self):
+        self.client = Client(raise_request_exception=False)
+        self.factory = RequestFactory()
+
+    def test_limit_is_before_csrf_and_keeps_existing_upload_policies(self):
+        middleware = settings.MIDDLEWARE
+
+        self.assertLess(
+            middleware.index("config.middleware.MultipartUploadLimitMiddleware"),
+            middleware.index("django.middleware.csrf.CsrfViewMiddleware"),
+        )
+        self.assertEqual(settings.DATA_UPLOAD_MAX_MEMORY_SIZE, 6 * 1024 * 1024)
+        self.assertEqual(settings.FILE_UPLOAD_MAX_MEMORY_SIZE, 5 * 1024 * 1024)
+        self.assertEqual(settings.DATA_UPLOAD_MAX_NUMBER_FILES, 5)
+        self.assertEqual(settings.MULTIPART_UPLOAD_MAX_BYTES, 21 * 1024 * 1024)
+        self.assertGreater(settings.MULTIPART_UPLOAD_MAX_BYTES, 20 * 1024 * 1024)
+
+    def test_known_oversized_length_rejects_all_write_methods_before_downstream(self):
+        for method in ("POST", "PUT", "PATCH"):
+            with self.subTest(method=method):
+                request = self.factory.generic(
+                    method,
+                    "/__test__/multipart/",
+                    data=b"--upload-boundary--\r\n",
+                    content_type="multipart/form-data; boundary=upload-boundary",
+                )
+                request.META["CONTENT_LENGTH"] = str(settings.MULTIPART_UPLOAD_MAX_BYTES + 1)
+                downstream_calls = []
+
+                def downstream(inner_request, calls=downstream_calls):
+                    calls.append(inner_request)
+                    return HttpResponse("must not run")
+
+                response = MultipartUploadLimitMiddleware(downstream)(request)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(downstream_calls, [])
+                self.assertFalse(request._read_started)
+                self.assertFalse(hasattr(request, "_files"))
+                self.assert_no_diagnostics(
+                    response,
+                    "multipart upload exceeded",
+                    "requestdatatoobig",
+                )
+
+    def test_cumulative_handler_does_not_reset_between_files(self):
+        request = self.factory.post("/__test__/multipart/")
+        handler = CumulativeUploadLimitHandler(request, max_bytes=5)
+
+        handler.new_file("files", "one.bin", "application/octet-stream", 3)
+        self.assertEqual(handler.receive_data_chunk(b"abc", 0), b"abc")
+        self.assertIsNone(handler.file_complete(3))
+        handler.new_file("files", "two.bin", "application/octet-stream", 3)
+
+        with self.assertRaises(RequestDataTooBig):
+            handler.receive_data_chunk(b"def", 0)
+
+        self.assertEqual(handler.received_bytes, 6)
+
+    @override_settings(MULTIPART_UPLOAD_MAX_BYTES=5)
+    def test_understated_length_is_caught_while_parser_streams_all_file_chunks(self):
+        body = encode_multipart(
+            BOUNDARY,
+            {
+                "files": [
+                    SimpleUploadedFile("one.bin", b"abc"),
+                    SimpleUploadedFile("two.bin", b"def"),
+                ]
+            },
+        )
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/__test__/multipart/",
+            "query_string": b"",
+            "headers": [
+                (b"content-type", MULTIPART_CONTENT.encode("ascii")),
+                # ASGI supplies the complete de-chunked stream. Deliberately
+                # understate the untrusted header so only chunk accounting can
+                # catch the combined six bytes.
+                (b"content-length", b"1"),
+            ],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        request = ASGIRequest(scope, BytesIO(body))
+
+        def parse_files(inner_request):
+            inner_request.FILES.getlist("files")
+            return HttpResponse("must not succeed")
+
+        response = MultipartUploadLimitMiddleware(parse_files)(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assert_no_diagnostics(
+            response,
+            "multipart upload exceeded",
+            "requestdatatoobig",
+        )
+
+    @override_settings(MULTIPART_UPLOAD_MAX_BYTES=5)
+    def test_missing_chunked_length_installs_the_same_cumulative_guard(self):
+        request = self.factory.generic(
+            "POST",
+            "/__test__/multipart/",
+            content_type="multipart/form-data; boundary=upload-boundary",
+        )
+        request.META["CONTENT_TYPE"] = "multipart/form-data; boundary=upload-boundary"
+        request.META.pop("CONTENT_LENGTH", None)
+        request.META["HTTP_TRANSFER_ENCODING"] = "chunked"
+
+        def stream_chunks(inner_request):
+            handler = inner_request.upload_handlers[0]
+            handler.receive_data_chunk(b"abc", 0)
+            handler.file_complete(3)
+            handler.receive_data_chunk(b"def", 0)
+            return HttpResponse("must not succeed")
+
+        response = MultipartUploadLimitMiddleware(stream_chunks)(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assert_no_diagnostics(
+            response,
+            "multipart upload exceeded",
+            "requestdatatoobig",
+        )
+
+    def test_full_stack_oversized_header_returns_safe_400_with_security_headers(self):
+        response = self.client.generic(
+            "POST",
+            "/__test__/multipart/",
+            data=b"--upload-boundary--\r\n",
+            content_type="multipart/form-data; boundary=upload-boundary",
+            CONTENT_LENGTH=str(settings.MULTIPART_UPLOAD_MAX_BYTES + 1),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "BAD REQUEST", status_code=400)
+        self.assert_no_diagnostics(
+            response,
+            "multipart upload exceeded",
+            "requestdatatoobig",
+        )
+        self.assert_security_headers(response)
+
+    def test_normal_multipart_upload_still_reaches_django_file_parsing(self):
+        response = self.client.post(
+            "/__test__/multipart/",
+            {
+                "files": [
+                    SimpleUploadedFile("one.txt", b"abc", content_type="text/plain"),
+                    SimpleUploadedFile("two.txt", b"defg", content_type="text/plain"),
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"file_count": 2, "file_bytes": 7})
+        self.assert_security_headers(response)
 
 
 @override_settings(

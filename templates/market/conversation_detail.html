@@ -51,11 +51,21 @@
           {% else %}
             <a class="button button-primary" href="{% url 'market:review_create' active_trade.pk %}">상대방 후기 작성</a>
           {% endif %}
-        {% elif user == conversation.seller and interaction_allowed %}
-          <form method="post" action="{% url 'market:trade_request_completion' conversation.pk %}">
-            {% csrf_token %}
-            <button class="button button-outline" type="submit">이 구매자에게 거래 완료 확인 요청</button>
-          </form>
+        {% else %}
+          {% if recent_closed_trade %}
+            <p class="trade-state">
+              {% if recent_closed_trade.status == 'REJECTED' %}구매자가 이전 완료 요청을 거절했습니다.{% else %}판매자가 이전 완료 요청을 취소했습니다.{% endif %}
+              <small>{{ recent_closed_trade.closed_at|date:"Y년 m월 d일 H:i" }}</small>
+            </p>
+          {% endif %}
+          {% if other_active_trade_exists %}
+            <p class="trade-state">이 상품의 다른 거래 완료 확인이 진행 중입니다. 상대 구매자 정보는 공개하지 않습니다.</p>
+          {% elif user == conversation.seller and interaction_allowed %}
+            <form method="post" action="{% url 'market:trade_request_completion' conversation.pk %}">
+              {% csrf_token %}
+              <button class="button button-outline" type="submit">이 구매자에게 거래 완료 확인 요청</button>
+            </form>
+          {% endif %}
         {% endif %}
       </section>
     {% endif %}
@@ -80,9 +90,9 @@
     </div>
 
     {% if interaction_allowed %}
-    <form method="post" class="message-form" novalidate>
+    {% include "includes/form_error_summary.html" %}
+    <form method="post" class="message-form" data-secure-form>
       {% csrf_token %}
-      {% if form.non_field_errors %}<div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
       {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
       {% for field in form.visible_fields %}
         <div class="field-group{% if field.errors %} field-error{% endif %}">
@@ -92,7 +102,7 @@
           {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
-      <button class="button button-primary" type="submit">메시지 보내기</button>
+      <button class="button button-primary" type="submit" data-submit-button data-pending-label="전송 중…">메시지 보내기</button>
     </form>
     {% else %}
       <div class="chat-disabled" role="status"><span aria-hidden="true">i</span><p><strong>현재 메시지를 보낼 수 없습니다.</strong><small>차단 상태이거나 상품이 거래 가능한 상태가 아닙니다.</small></p></div>

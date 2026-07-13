@@ -70,7 +70,7 @@
 
 ## ADR-009 - 모노크롬 인터페이스와 상품 사진 원색 유지
 
-- 상태: 확정
+- 상태: 대체됨 — 레이아웃·원색 상품 사진 원칙은 유지하고 색상 팔레트는 ADR-020이 대체
 - 결정: 기존 semantic HTML·Flexbox·Grid와 보안 경계는 유지하고, UI chrome만 검정·흰색·중립 회색으로 전환한다. 상품 사진과 안전 의미의 오류·성공 상태색은 원색을 유지한다.
 - 이유: 단순한 색 체계로 정보 위계를 강화하면서 새 외부 asset·라이브러리·CSP 예외를 추가하지 않기 위해서다. 상품 사진을 흑백으로 바꾸면 구매자가 색상·상태를 오인할 수 있다.
 - 접근성: 흰색 안쪽·검정 바깥쪽 focus ring, 44px touch target, 상태 텍스트·테두리, reduced motion, 320px 무가로 overflow 원칙을 유지한다.
@@ -128,7 +128,7 @@
 
 ## ADR-015 - 모노크롬 UI의 세이지 업로드 예외와 보호된 현재 이미지 위젯
 
-- 상태: 확정
+- 상태: 부분 대체 — 보호 widget·세이지 첨부 경계는 유지하고 전역 팔레트는 ADR-020이 대체
 - 결정: 전체 UI chrome은 ADR-009의 검정·흰색·중립 회색을 유지하되, 상품 등록·수정의 이미지 첨부 영역만 저채도 세이지 배경 `#edf4ef`와 짙은 녹색 조작색 `#335c45`를 사용한다. 업로드한 상품 사진은 상품 정보 왜곡을 막기 위해 원색으로 표시한다.
 - 이유: 파일 선택은 일반 텍스트 입력과 성격이 다른 고위험 조작이므로 색과 경계로 범위를 명확히 구분할 필요가 있다. 저채도 색을 좁은 영역에만 적용해 시각적 부담을 낮추되, 특정 색이 의학적으로 눈의 피로를 줄인다고 단정하지 않고 텍스트·테두리·focus 상태로도 의미를 전달한다.
 - 보안 결정: Django 기본 `ClearableFileInput`의 현재 파일명과 `FieldFile.url`을 그대로 렌더링하지 않는다. `ProtectedListingImageInput`은 소유자 검사를 수행하는 `market:listing_image` URL만 만들고, 일반화한 현재 이미지 안내·미리보기·삭제 checkbox만 표시해 내부 저장명과 무효 `/_private-media/` 링크 노출을 제거한다.
@@ -154,7 +154,7 @@
 - 이유: 기존 `Listing.SOLD`만으로는 실제 구매자를 식별할 수 없고 판매자가 단독으로 상태를 바꿀 수 있어 거래하지 않은 사용자의 후기, 구매자 위조와 보복성 맞후기를 막을 수 없다. 대화로 구매자를 고정한 상호 확인과 blind publication이 권한·공정성 경계를 함께 만든다.
 - 통제: 완료 요청·응답은 `transaction.atomic()`과 상품·거래 행 잠금을 사용하고, 상품 및 대화별 진행/완료 거래의 조건부 UNIQUE와 상태별 timestamp CHECK를 둔다. `SOLD` 전환은 구매자 확인 서비스에서만 수행하며 일반 상태 변경은 `ACTIVE`↔`RESERVED`로 제한한다. 요청 뒤 판매자가 구매자를 차단해 확인·후기를 억압할 수 없도록 완료 판정에서는 사후 `UserBlock`을 권한 근거로 쓰지 않되, 정지 계정과 `BLOCKED`·`DELETED` 상품은 거절한다. 진행·완료 거래가 있는 상품은 수정·삭제·재판매·새 대화를 서버에서 차단한다.
 - 검토한 대안: 판매자의 단독 `SOLD` 변경, POST로 전달된 buyer ID 신뢰, 첫 후기 즉시 공개는 각각 거래 위조·IDOR·보복 후기를 만들기 때문에 채택하지 않았다. 실결제나 대면 증명을 수집하는 방식은 개인정보와 운영 복잡도가 과도해 이번 범위에서 제외했다.
-- 잔여 위험: 판매자와 구매자가 공모하면 실제 물품 전달 없이 상호 완료할 수 있고 물리적 거래 분쟁까지 시스템이 증명하지는 못한다. 운영에서는 이상 후기 패턴 탐지, 이의제기·숨김 절차와 PostgreSQL 기반 동시성 재검증이 필요하다.
+- 잔여 위험: 판매자와 구매자가 공모하면 실제 물품 전달 없이 상호 완료할 수 있고 물리적 거래 분쟁까지 시스템이 증명하지는 못한다. 거절·취소 시 요청 전 상태를 복원하므로 최초 상태가 `RESERVED`였다면 계속 예약 상태로 남는다. 운영에서는 예약 해제 주체·만료시간, 이상 후기 패턴 탐지, 이의제기·숨김 절차와 PostgreSQL 기반 동시성 재검증이 필요하다.
 - 증적: `market/models.py`, `market/services.py`, `market/views.py`, `market/forms.py`, `market/test_trade_reviews.py`의 상호 완료·거절/취소 복구·IDOR·legacy SOLD·완료 후 변경 차단·사후 차단 악용·blind 공개·중복·PII·XSS 회귀.
 
 ## ADR-018 - 관심 검색과 가격 하락 알림은 구조화 이벤트에서 멱등 fan-out
@@ -165,7 +165,7 @@
 - 통제: 이벤트 형태 CHECK와 상품별 `NEW_MATCH` UNIQUE, `(recipient, event)` UNIQUE를 두고 `select_for_update()`로 `processed_at`을 직렬화한다. 이벤트 시각 이전에 존재한 저장 검색·찜만 대상으로 하며 판매자 자신, 양방향 차단 사용자, 비활성·정지 계정을 제외한다. 여러 검색 조건은 사용자별 한 건으로 합치고 200건 단위 iterator·bulk insert를 사용한다. fan-out은 상품 transaction의 `on_commit` 뒤 실행하며 실패 시 사용자 상품 변경은 유지하고 `processed_at=NULL`과 고정 보안 로그를 남겨 멱등 재실행할 수 있게 한다.
 - 표시·인가: 저장 검색 삭제, 개별 읽음과 전체 읽음은 로그인 사용자 소유 범위로만 조회한다. 알림 열람 시 현재 상품 공개 가능성을 다시 평가하고 비공개 상품은 제목·가격·이벤트 종류 대신 일반 안내만 보여 준다. 검색어·상품명은 템플릿 autoescape 경계를 유지한다.
 - 검토한 대안: Django signal에서 동기 발송하거나 알림 본문 전체를 저장하는 방식은 transaction 경계와 현재 공개 상태를 놓치기 쉬워 채택하지 않았다. 현재 규모에서 외부 queue를 새로 도입하는 대신 DB 멱등성과 제한된 batch로 최소 구현했다.
-- 잔여 위험: 현재 매칭은 웹 프로세스에서 저장 검색을 선형 탐색하므로 사용자가 늘면 지연과 자원고갈 위험이 있다. 미처리 이벤트를 제한 수만 재실행하는 `process_listing_events` 명령은 제공하지만 자동 worker가 아니므로, 운영 전 PostgreSQL·작업 queue·backoff/지연 지표·알림 보존기간을 추가해야 한다.
+- 잔여 위험: 현재 매칭은 웹 프로세스에서 저장 검색을 선형 탐색하므로 사용자가 늘면 지연과 자원고갈 위험이 있다. 이벤트별 중복은 막지만 판매자가 가격을 반복 인상·인하하면 하락 이벤트가 계속 생길 수 있어 최소 하락폭·cooldown·묶음 알림 정책이 필요하다. 미처리 이벤트를 제한 수만 재실행하는 `process_listing_events` 명령은 제공하지만 자동 worker가 아니므로, 운영 전 PostgreSQL·작업 queue·backoff/지연 지표·알림 보존기간을 추가해야 한다.
 - 증적: `market/models.py`, `market/services.py`, `market/views.py`, `market/test_saved_search_notifications.py`의 정규화 중복·20개 quota·소유자 IDOR·시각 경계·사용자별 중복 제거·잠긴 가격 snapshot·차단/정지 제외·비공개 metadata·XSS·멱등·`on_commit` 회귀.
 
 ## ADR-019 - 대표 사진 1장과 추가 4장, 하자 허용목록, 신고 시 다중 증거 snapshot
@@ -176,5 +176,46 @@
 - 통제: 요청의 모든 파일 필드를 sanitizer 전에 허용목록 검사하고 대표를 포함해 최대 5장·합계 20MB를 제한한다. 각 파일은 기존 JPEG/PNG/WebP·5MB·12MP·재인코딩 검사를 거친다. 수정 폼의 삭제 ID는 현재 상품의 선택지로만 만들고 transaction 안에서 잠근 자식 집합을 다시 확인하며, 대표 삭제 시 첫 추가 사진을 승격한다. DB 실패 뒤 요청에서 새로 쓴 `FieldFile`만 정리하고 기존 파일 삭제는 commit 뒤 수행한다. 추가 사진 route는 공개 가능한 부모와 `(listing, image_pk)`를 함께 조회하고 `private, no-store`·`nosniff`를 적용한다.
 - 증거 통제: 신고 증거 파일은 상품 삭제 뒤에도 참조 여부를 확인해 보존한다. 관리자 다중 증거 route는 독립 목록으로 등록하지 않고 `ReportAdmin`의 조회 권한을 다시 검사하며 `(report, evidence_id)`로 자식을 한정한다. 파일은 5MB+1byte만 읽고 초과를 거절한 뒤 `hmac.compare_digest()`로 snapshot digest를 검증하며 내부 저장명을 HTML에 노출하지 않는다.
 - 검토한 대안: 다중 `<input>` 값을 그대로 모델에 저장하거나 자유 문자열 하자 태그를 허용하는 방식은 개수·형식·도메인 불변식을 보장하지 못해 거절했다. 외부 공개 object URL은 현재 private media 정책과 맞지 않아 보호 application route를 확장했다.
-- 잔여 위험: reverse proxy가 애플리케이션보다 먼저 전체 body를 수신할 수 있으므로 운영 body limit도 필요하다. object storage rollback 정리는 best-effort이며 주기적 orphan 대사가 필요하고, 신고 증거의 법적 보존기간·삭제 승인·접근 감사 정책은 운영자가 확정해야 한다.
+- 잔여 위험: ADR-021로 애플리케이션 parser 전 21MiB 상한을 추가했지만 reverse proxy가 애플리케이션보다 먼저 전체 body를 수신할 수 있으므로 운영 body/time/connection limit도 필요하다. object storage rollback 정리는 best-effort이며 주기적 orphan 대사가 필요하고, 신고 증거의 법적 보존기간·삭제 승인·접근 감사 정책은 운영자가 확정해야 한다.
 - 증적: `market/models.py`, `market/forms.py`, `market/views.py`, `market/admin.py`, `market/storage.py`, `market/test_multi_image_defects.py`, `market/test_admin_image_evidence.py`의 5장·합계 제한·예상 밖 field·child IDOR·stale 삭제 ID·대표 승격·하자 허용목록·XSS·다중 snapshot·삭제 뒤 보존·orphan 정리·관리자 report scope 회귀.
+
+## ADR-020 - 웜톤 전역 팔레트와 기존 보안·접근성 경계 유지
+
+- 상태: 확정
+- 결정: 모노크롬 전역 팔레트는 크림 canvas `#f7f3ec`, warm-white surface `#fffdfc`, 짙은 갈색 text `#211d19`, 테라코타 primary `#8b3e2a` 중심의 웜톤으로 교체한다. 상품 사진은 원색, 파일 첨부 영역은 기존 저채도 세이지, 성공·경고·위험 상태는 색과 텍스트를 함께 유지한다.
+- 이유: 중고거래 화면의 장시간 탐색에서 순수 흑백의 강한 대비를 완화하면서 카드·폼·상태·주요 행동의 위계를 일관되게 만들기 위해서다. 외부 UI library·font·image asset 없이 CSS 변수와 마지막 cascade만 바꿔 CSP와 공급망 경계를 늘리지 않는다.
+- 접근성·반응형: `:focus-visible`의 3px focus와 보조 ring, 주요 조작 최소 44px, `prefers-reduced-motion`, 긴 입력 줄바꿈과 기존 1080/900/700/470/360px 경계를 유지한다. 브라우저에서 1440×1000과 320×800의 문서 가로 overflow가 0이고 주요 조작이 44px 이상임을 확인했다. 실제 키보드·스크린리더·200% 확대는 별도 사용자 인수로 남긴다.
+- 보안 영향: 템플릿·route·인가·업로드 처리는 바꾸지 않고 외부 asset·inline script를 추가하지 않는다. 색은 상태의 유일한 표현 수단으로 사용하지 않는다.
+- 증적: `static/css/site.css`의 final warm cascade, `templates/base.html` cachebuster, `docs/06_TEST_CHECKLIST.md` TEST-R013.
+
+## ADR-021 - multipart 전체 요청은 CSRF 파싱 전에 21MiB로 제한
+
+- 상태: 확정
+- 결정: 이미지 Form의 20MB batch 검사와 별도로 모든 multipart POST·PUT·PATCH에 21MiB request-wide 상한을 적용한다. 알려진 `Content-Length`는 body read 전에 거부하고, 누락·chunked·축소된 길이는 첫 upload handler가 여러 파일의 실제 chunk를 누적해 제한한다.
+- 이유: CSRF middleware가 view보다 먼저 `request.POST`를 파싱할 수 있어 Form 검사는 parser·임시 저장소·worker 자원 소비를 막는 첫 경계가 될 수 없다. 반대로 `Content-Length`만 신뢰하면 공격자가 헤더를 누락·축소해 조기 거부를 우회할 수 있다.
+- 배치 이유: 이미지 합계 허용값 20MiB에 multipart boundary·정상 text field 여유 1MiB를 더했다. 기존 `DATA_UPLOAD_MAX_MEMORY_SIZE=6MiB`, 파일별 memory 5MiB, 최대 5파일과 이미지 sanitizer는 심층 방어로 유지한다.
+- 오류·보안 경계: middleware는 CSRF 앞에 두되 response-only security header middleware 안쪽에 배치해 초과 응답도 일반 400, CSP, `nosniff`, frame `DENY`, `private, no-store`를 받는다. 내부 예외명과 limit 문자열은 응답에 포함하지 않는다.
+- 잔여 위험: reverse proxy의 선수신·slow upload·연결 고갈은 application middleware가 막지 못한다. 운영 proxy에 같거나 더 작은 body limit, read timeout, connection/rate limit을 설정하고 부하 시험해야 한다.
+- 증적: `config/middleware.py`, `config/settings.py`, `config/tests.py`의 `MultipartUploadLimitTests` 7개.
+
+## ADR-022 - 하자 입력은 조건부 공개하되 서버 불변조건을 신뢰 경계로 유지
+
+- 상태: 확정
+- 결정: `하자 있음(PRESENT)`을 선택했을 때만 하자 체크리스트와 상세 입력을 표시·활성화한다. `하자 없음` 또는 `확인하지 못함`으로 바꾸면 브라우저에서 숨길 뿐 아니라 관련 checkbox와 상세를 비활성화·초기화한다. `기타(OTHER)`를 고르면 상세 입력에 native `required`를 동적으로 적용한다.
+- 서버 경계: JavaScript는 사용성 보조이며 보안 근거로 신뢰하지 않는다. `ListingForm.clean()`은 `PRESENT`에 하나 이상의 허용 code를 요구하고 비-`PRESENT`에 code를 보낸 위조 요청을 계속 거부한다. 정상 비-`PRESENT` 요청에 브라우저·과거 데이터의 stale 상세가 남아 있으면 빈 값으로 정규화해 화면 상태와 저장 상태를 일치시킨다.
+- 오류·제출 상태: 서버 오류는 페이지 상단 요약에 모든 필드 오류와 해당 입력 링크를 제공하고 요약에 포커스·스크롤한다. 조건부 필드에 오류가 있으면 숨기지 않아 사용자가 원인을 고칠 수 있게 한다. 폼의 `novalidate`를 제거해 기본 HTML 검증을 복구하고, 유효한 제출 뒤 버튼을 `저장 중…`·`aria-busy`·disabled 상태로 바꿔 응답 지연을 새로고침 실패로 오인하거나 중복 제출하는 일을 줄인다.
+- 이유: 항상 보이는 하자 상세는 `하자 없음`·`미확인`에서도 무엇을 입력해야 하는지 혼동시키며, 숨기기만 하고 값을 남기면 stale 문구가 잘못 저장될 수 있다. 반대로 클라이언트 제어만 사용하면 crafted POST로 상태·code 조합을 위조할 수 있으므로 UI와 서버 불변조건을 분리한다.
+- 접근성 경계: 오류 요약은 키보드 사용자가 곧바로 인지하고 링크로 이동할 수 있게 하며, 숨은 컨트롤은 disabled와 `aria-hidden`을 함께 사용한다. 실제 스크린리더·키보드·200% 확대 인수는 여전히 제출 전 수동 항목이다.
+- 증적: `market/forms.py`, `templates/market/listing_form.html`, `static/js/listing_form.js`, `static/css/site.css`; `MultiImageDefectSecurityTests`·`MultipartUploadLimitTests`·`ListingAdminSecurityTests`·`TradeReviewSecurityTests` 최신 결합 **40개 / 17.697초 / system check 0건 / Ruff PASS**.
+
+## ADR-023 - 업로드 오류는 파일을 재결합하지 않고, 수정·거래 UI는 최신 상태를 명시적으로 비교
+
+- 상태: 확정
+- 업로드 결정: 파일 field·개수·합계 preflight 오류가 나면 거부 파일 객체를 `ListingForm`에 다시 bind하거나 디코딩하지 않는다. 길이 제한을 통과한 텍스트 입력만 유지하고 사진 재선택을 안내한다. 브라우저는 기존·삭제·신규 선택을 합친 최종 5장, 신규 파일 장당 5MiB와 합계 20MiB를 사전 검증하지만, 보안 판정은 서버 preflight·Django 5파일 parser 상한·이미지 sanitizer·21MiB middleware가 독립 수행한다.
+- 사진 편집 결정: 추가 사진의 보호된 썸네일, 대표부터 이어지는 번호, 삭제 checkbox를 동일 label로 결합한다. 대표 삭제 시 남은 첫 추가 사진이 승격됨을 도움말에 명시한다. 화면 결합은 오선택을 줄이는 UX 통제이며, 서버는 제출 UUID가 잠근 현재 상품 자식 집합의 부분집합인지 계속 검증한다.
+- 동시 수정 결정: 수정 GET에 `updated_at` microseconds 기반 hidden `revision`을 제공하고, POST transaction에서 잠근 최신 행의 revision과 비교한다. 불일치하면 일반 오류 요약과 함께 409를 반환하고 제목·가격·하자·파일·알림 event를 모두 저장하지 않는다. revision이 없는 기존 소유자 요청은 호환상 허용하므로 공개 API로 확장할 때는 `If-Match` 또는 필수 revision으로 강화한다.
+- 거래 UI 결정: 상품 전체에서 진행·완료 중인 거래와 현재 대화의 거래를 별도로 조회한다. 다른 대화의 활성 거래가 있으면 현재 대화에는 완료 CTA를 보이지 않고 상대 구매자 식별정보도 공개하지 않는다. 현재 대화에서 닫힌 최신 요청이 거절 또는 취소라면 해당 상태·시각을 표시한다.
+- 공통 오류 결정: 상품·메시지·후기 Form은 같은 오류 요약 partial, 오류 포커스 이동, native validation, 유효 제출의 `aria-busy`·disabled·진행 문구를 사용한다. JavaScript는 중복 제출과 탐색 비용을 줄이는 보조 계층이며 CSRF·Form·인가·rate limit을 대체하지 않는다.
+- 이유: 거부 파일을 다시 처리하는 비용·혼동, 썸네일과 삭제 선택의 오연결, 두 탭의 lost update, 상품 전체 거래 상태와 개별 대화 CTA의 불일치는 각각 가용성·데이터 무결성·상대 최소공개를 훼손한다. 사용자 피드백과 서버 상태 검증을 같은 변경에서 일치시켜야 “저장된 사실”과 “화면이 약속한 결과”가 어긋나지 않는다.
+- 검토한 대안: 오류 후 파일 input 값을 복원하는 방식은 브라우저 보안상 신뢰할 수 없고 파일 객체 재사용 위험이 있어 채택하지 않았다. 마지막 저장 승리 방식은 가격·하자·알림 근거를 조용히 덮으므로 거절했다. 모든 대화에 상품의 진행 거래 상대를 표시하는 방식은 개인정보 최소화에 어긋난다.
+- 증적: `market/forms.py`, `market/views.py`, `templates/includes/form_error_summary.html`, `templates/market/listing_form.html`, `templates/market/conversation_detail.html`, `templates/market/review_form.html`, `static/js/listing_form.js`, `static/js/secure_form.js`; 최신 결합 **40개 / 17.697초 / system check 0건**, 전체 tests **219 / 219 / 157.165초**, Coverage **219 / 219 / 162.533초·6,037 statements / 354 miss / 94%**, Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff PASS.

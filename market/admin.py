@@ -86,6 +86,7 @@ class ImmutableLedgerAdminMixin(ReadOnlyAdminMixin):
 @admin.register(Listing)
 class ListingAdmin(admin.ModelAdmin):
     form = ListingAdminForm
+    editable_fields = ListingAdminForm.Meta.fields
     list_display = (
         "title",
         "seller",
@@ -138,13 +139,36 @@ class ListingAdmin(admin.ModelAdmin):
         try:
             with transaction.atomic():
                 if change:
-                    previous = (
-                        Listing.objects.select_for_update().filter(pk=obj.pk).only("image").first()
-                    )
+                    previous = Listing.objects.select_for_update().filter(pk=obj.pk).first()
                     if previous is None:
                         raise PermissionDenied
+                    if form is None:
+                        raise PermissionDenied
+                    # Continue with the locked row itself so that validation/save
+                    # failures also expose the new uploaded filename to cleanup.
+                    obj = previous
+                    stale_protected_state = (
+                        previous.seller_id != form.instance.seller_id
+                        or previous.status != form.instance.status
+                        or previous.blocked_by_id != form.instance.blocked_by_id
+                        or previous.blocked_reason != form.instance.blocked_reason
+                        or previous.blocked_at != form.instance.blocked_at
+                    )
+                    if stale_protected_state:
+                        raise PermissionDenied
                     old_name = previous.image.name if previous.image else ""
-                super().save_model(request, obj, form, change)
+                    for field_name in self.editable_fields:
+                        if field_name == "image":
+                            Listing._meta.get_field("image").save_form_data(
+                                previous,
+                                form.cleaned_data[field_name],
+                            )
+                        else:
+                            setattr(previous, field_name, form.cleaned_data[field_name])
+                    previous.full_clean()
+                    previous.save(update_fields=(*self.editable_fields, "updated_at"))
+                else:
+                    super().save_model(request, obj, form, change)
                 new_name = obj.image.name if obj.image else ""
                 if old_name and old_name != new_name:
                     transaction.on_commit(

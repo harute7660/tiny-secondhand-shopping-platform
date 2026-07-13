@@ -86,11 +86,14 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # These response-only protections must also wrap an upload rejected before
+    # CSRF, authentication, or view processing begins.
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "config.middleware.SecurityHeadersMiddleware",
+    "config.middleware.MultipartUploadLimitMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "config.middleware.SecurityHeadersMiddleware",
     "config.middleware.SafeExceptionMiddleware",
 ]
 
@@ -189,6 +192,10 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 6 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 100
 DATA_UPLOAD_MAX_NUMBER_FILES = 5
+# Listing forms separately enforce 5 MiB per image and 20 MiB for the image
+# batch. One extra MiB leaves room for multipart boundaries and normal fields
+# while providing an early, request-wide denial-of-service guard.
+MULTIPART_UPLOAD_MAX_BYTES = 21 * 1024 * 1024
 
 CACHES = {
     "default": {

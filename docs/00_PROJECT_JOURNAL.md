@@ -327,6 +327,20 @@
 - 체크리스트·테스트 증적: 세 기능 직접 분기 33개와 관리자 다중 증거·실패 이벤트 재처리·완료 거래 자동차단 복구 3개를 각각 통과시킨 뒤 `python manage.py test` 전체 **206개를 114.641초에 통과**했고 system check 문제는 0건이었다. Coverage 계측도 **206개 / 115.434초 / 5,778 statements / 343 miss / 94%**였으며 Ruff lint·46개 파일 format, Bandit, pip-audit, deploy check, migration drift, `git diff --check`, CSS 중괄호 987/987이 모두 통과했다. 추가 전 170개·94%는 역사적 스냅샷으로 보존한다.
 - 유지보수·잔여 위험: SQLite의 `select_for_update()`는 실질적 행 잠금을 제공하지 않아 관심 검색 20개 quota와 상태 전이의 동시성 보장은 개발 환경에서 최선 노력이다. 상품 이벤트는 transaction commit 뒤 `on_commit()`에서 현재 요청 프로세스가 동기 fan-out하며, 실패 이벤트는 `process_listing_events --limit N`으로 수동·제한 재처리할 수 있지만 자동 worker·backoff·dead-letter가 없다. 운영 전 PostgreSQL·공유 Redis로 전환하고 worker/queue 기반 멱등 재시도, 실패 모니터링, 알림·후기·신고 증거 보존/파기 정책과 경합·대량 fan-out 부하 시험을 추가한다. 후기의 정규식 기반 개인정보 탐지는 보조 통제이므로 신고·관리자 숨김과 운영 정책이 계속 필요하다.
 
+## 2026-07-13 - 상품 작성·수정·거래 대화 완성도와 stale 상태 경계 보강
+
+- 단계: 사용자 불편 재현 / UX·보안 감사 / 시스템 설계 보정 / 구현 / 표적 회귀 / 유지보수 기록
+- 발견한 품질 문제: 업로드 preflight 오류 뒤 거부 파일을 다시 폼에 결합하면 같은 파일을 디코딩하거나 오류를 중복 표시할 수 있었고, 사용자는 사진이 유지되었는지 알기 어려웠다. 기존 추가 사진의 썸네일과 삭제 checkbox·번호 관계도 약해 잘못된 사진을 지울 수 있었으며 대표 사진 삭제 뒤 승격 규칙이 화면에 충분히 설명되지 않았다. 상품·메시지·후기 폼의 오류 위치와 처리 중 상태가 서로 달랐고, 상품의 다른 대화에서 거래 완료 확인이 진행 중일 때 현재 대화에 잘못된 CTA가 보일 여지도 있었다.
+- 발견한 보안·무결성 문제(SEC-047): 같은 상품 수정 화면을 두 탭에서 열면 늦게 저장한 오래된 폼이 먼저 저장된 제목·가격·하자와 가격 하락 알림 event의 근거를 덮어쓸 수 있었다. 거래 CTA가 상품 전체의 활성 거래와 현재 대화의 거래를 구분하지 않으면 무관한 구매자가 완료 흐름을 시도하거나 상대 신원을 추론할 수 있었다.
+- 업로드 결정: 허용 field·개수·합계 preflight에서 오류가 나면 거부 파일 객체를 `ListingForm`에 bind·디코딩하지 않고 길이 제한을 통과한 텍스트 POST만 같은 폼에 유지한다. “사진을 다시 골라야 한다”는 안내를 한 번만 표시하며, 브라우저는 기존·삭제·신규를 합친 5장, 장당 5MiB, 신규 합계 20MiB를 제출 전에 검사한다. 전역 `DATA_UPLOAD_MAX_NUMBER_FILES=5`를 넘긴 6파일 위조는 Django parser가 진단정보 없는 일반 400으로 종료한다. 클라이언트 검사는 편의 기능이며 서버 preflight·sanitizer·21MiB middleware를 보안 경계로 유지한다.
+- 사진 편집 결정: 추가 사진 썸네일·연속 번호·삭제 checkbox를 동일 label 안에 직접 결합해 선택 대상을 명확히 했다. 대표 사진을 지우면 남은 첫 추가 사진이 대표로 승격된다는 결과를 도움말에 적었고, 서버의 부모 결합 UUID 검증과 transaction 안의 잠근 자식 재검사는 유지했다.
+- stale 수정 결정: GET 수정 폼에 `updated_at` microseconds 값의 hidden `revision`을 넣고 POST transaction에서 잠근 최신 행의 revision과 비교한다. 다르면 409·일반 오류 요약·새 사진 재선택 안내를 반환하고 어느 필드도 저장하지 않아 가격·하자·알림 덮어쓰기를 막는다. 기존 호환 때문에 revision 누락 요청은 강제 거부하지 않아 인증된 소유자가 직접 생략하는 요청은 잔여 위험이며, 공개 API로 확장할 때 `If-Match` 또는 필수 revision으로 전환한다.
+- 거래 대화 결정: 상품 전체의 진행·완료 거래와 현재 대화의 거래를 분리한다. 다른 대화에서 진행 중이면 현재 대화의 완료 요청·확인·후기 CTA를 숨기고 “다른 거래가 진행 중”이라는 일반 문구만 보여 상대 구매자 신원을 공개하지 않는다. 현재 대화의 최근 거절·취소 기록은 상태와 일시를 표시해 다음 행동을 이해하게 한다.
+- 공통 폼 피드백: 상품·메시지·후기 폼이 같은 오류 요약 partial과 포커스 이동, native validation, 유효 제출 중 버튼 잠금·상태 문구를 사용한다. 이는 중복 요청과 실패를 새로고침으로 오인하는 문제를 줄이지만 서버 CSRF·Form·rate limit을 대체하지 않는다.
+- 테스트/증적: `MultiImageDefectSecurityTests`, `MultipartUploadLimitTests`, `ListingAdminSecurityTests`, `TradeReviewSecurityTests` 최신 결합 **40개 / 17.697초 / system check 0건**, Ruff PASS. 5장·5MiB·20MiB client 경계, preflight 텍스트 보존·파일 재선택, 6파일 parser 400, 썸네일-삭제 결합·대표 승격, stale revision 409·무변경, 다른 거래 CTA·신원 비공개, 현재 대화 거절·취소 기록, 공통 오류·제출 잠금 분기를 포함한다.
+- 결과: 최신 직접 분기 표적 뒤 전체 Django tests **219 / 219 통과 / 157.165초 / system check 0건**, Coverage **219 / 219 / 162.533초 / 6,037 statements / 354 miss / 94%**였다. Ruff lint PASS·46 files formatted, Bandit 0, pip-audit 알려진 취약점 0, Django check·deploy warning 0, migration no changes, Node JavaScript syntax·`git diff --check` PASS로 로컬 최종 품질 게이트를 닫았다.
+- 잔여 위험/다음 작업: revision 누락 호환 경계, SQLite의 실질 행 잠금 부재, 브라우저가 파일 내용을 읽기 전에 표시하는 크기 정보의 비신뢰성은 남는다. 운영 전 PostgreSQL 경합 시험, API revision 의무화, reverse proxy body/time/connection 제한과 실제 키보드·스크린리더·200% 확대·다중 탭 브라우저 인수를 수행한다.
+
 ## 후속 기록 템플릿
 
 ### YYYY-MM-DD HH:MM - 제목

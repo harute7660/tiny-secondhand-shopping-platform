@@ -1,6 +1,6 @@
 # 기능·보안 테스트 체크리스트
 
-`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. 2026-07-13 세 확장 기능과 보안 보강까지 포함한 전체 206개를 최종 재실행했다. coverage 94%, 정적·공급망·deploy 검사도 모두 통과했다.
+`[x]`는 해당 범위의 자동 검사 또는 명시한 코드 검토 완료, `[~]`는 일부만 확인했거나 GitHub·브라우저 등 추가 확인 대상, `[ ]`는 미완료, `N/A`는 이유를 확인한 비적용 항목이다. SEC-042~047 최신 결합 표적 40개가 17.697초에 system check 0건·Ruff PASS로 통과했고, 후속 변경 뒤 전체 Django tests **219 / 219 / 157.165초**, Coverage **219 / 219 / 162.533초·6,037 statements / 354 miss / 94%**와 정적·공급망·운영 게이트가 모두 통과했다.
 
 ## 자동 검사 요약
 
@@ -9,12 +9,18 @@
 | Django 변경 기능 tests | 프로필·마이페이지·전체 채팅·상품·신고 6개 test class | 79개 전부 통과, 53.066초, system check 0건 | 현재 변경 범위 완료 |
 | 이미지 첨부 UI tests | `market.tests.ListingSecurityTests` | 26개 전부 통과, 18.104초 | 직접 분기 완료 |
 | 세 확장 기능 표적 tests | 후기 9 + 알림 12 + 다중 이미지·하자 12 + 추가 보안 3 | 36개 전부 통과 | 직접 분기 완료 |
-| Django 전체 tests | `manage.py test --verbosity 1` | 206개 전부 통과, 114.641초, system check 0건 | 완료 |
-| Coverage | `coverage run --source=accounts,community,config,market manage.py test` | 계측 206개 전부 통과, 115.434초, 5,778 statements / 343 miss / 94% | 완료 |
+| SEC-042~044 표적 tests | `market.test_trade_reviews` + `market.tests.ListingAdminSecurityTests` | 16개 전부 통과, 17.393초, system check 0건 | 직접 분기 완료 |
+| SEC-045 multipart tests | `config.tests.MultipartUploadLimitTests` | 7개 전부 통과, 0.023초, system check 0건 | 직접 분기 완료 |
+| SEC-042~047 최신 결합 표적 | 다중 이미지·multipart·Listing Admin·거래 후기 4개 class | 40개 전부 통과, 17.697초, system check 0건, Ruff PASS | 최신 직접 분기 완료 |
+| 직전 Django 전체 tests | `manage.py test --verbosity 1` | 206개 전부 통과, 114.641초, system check 0건 | 후속 변경 전 기준선 |
+| 직전 Coverage | `coverage run --source=accounts,community,config,market manage.py test` | 계측 206개 전부 통과, 115.434초, 5,778 statements / 343 miss / 94% | 후속 변경 전 기준선 |
+| 변경 후 전체 Django tests | `manage.py test --verbosity 1` | **219 / 219 통과, 157.165초, system check 0건** | 완료 |
+| 변경 후 Coverage | 전체 suite instrumentation | **219 / 219 통과, 162.533초, 6,037 statements / 354 miss / 94%** | 완료 |
+| 변경 후 정적·공급망·운영 게이트 | Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff | **Ruff PASS·46 files formatted; Bandit 0; 알려진 취약점 0; check/deploy 0; migration no changes; Node syntax·diff PASS** | 완료 |
 | Ruff | `ruff check .` 및 `ruff format --check .` | lint 오류 0건, 46개 파일 형식 일치 | 완료 |
 | Bandit | `bandit -r accounts community config market -c pyproject.toml -q` | 이슈 0건 | 완료 |
 | Django·migration | `manage.py check`, `makemigrations --check --dry-run` | system check 0건, 모델 변경 없음 | 완료 |
-| CSS 중괄호 | `static/css/site.css` 열림/닫힘 개수 비교 | 987 / 987 | 완료 |
+| CSS 중괄호 | `static/css/site.css` 열림/닫힘 개수 비교 | 1112 / 1112 | 현재 웜톤·하자 오류 UI CSS 균형 확인 |
 | pip-audit 최초 | 가상환경 전체 | `pip` 취약점 6건 | 발견 |
 | pip-audit 재검사 | 현재 가상환경 전체 | 알려진 취약점 0건 | 조치 완료 |
 | Django 배포 검사 | 검증용 운영 환경의 `check --deploy --fail-level WARNING` | 문제 0건 | 완료 |
@@ -28,17 +34,23 @@
 - [x] 판매자 요청과 해당 대화 구매자 확인이 있어야 `Trade.COMPLETED`·`Listing.SOLD`가 됨
 - [x] 레거시 `SOLD`만으로 후기 권한이 생기지 않고, 제3자·위조 방향·중복 후기 요청이 차단됨
 - [x] 첫 후기는 비공개이며 양측 제출 뒤 함께 공개되고 공개 프로필에 상품·가격·지역·UUID가 노출되지 않음
-- [x] 후기 XSS가 escape되고 전화번호·이메일·URL·긴 숫자 패턴이 거부됨
+- [x] `PENDING` 후기는 공개 프로필·상품 상세의 개수와 평균에도 반영되지 않고, 양쪽 `PUBLIC` 전환 뒤에만 집계됨
+- [x] 후기 XSS가 escape되고 slash 구분 전화번호를 포함한 전화번호·이메일·URL·긴 숫자 패턴이 거부됨
 - [x] 저장 검색 정규화·20개 제한·소유자 IDOR·알림 수신자 IDOR·중복·소급 발송이 방어됨
 - [x] 실제 가격 하락만 old/new 값으로 알리고 차단·정지·판매자 자신을 제외함
 - [x] 비공개 상품 알림에서 제목·가격·이벤트 종류·링크가 숨겨짐
 - [x] 대표 포함 최대 5장·합계 20MB·허용 field가 sanitizer 전에 검사됨
 - [x] 추가 이미지 부모 IDOR·위조 삭제 UUID·stale 대표 경로·DB 실패 orphan이 방어됨
 - [x] 하자 허용목록·상태 조합·OTHER 상세와 XSS가 검증됨
+- [x] `하자 있음`에서만 체크·상세가 표시·활성화되고 비-`PRESENT` 변경 시 브라우저 입력을 비활성화·초기화하며, 서버는 forged 모순을 거부하고 정상 stale 상세를 비움
+- [x] `OTHER` 상세의 native required, 서버 오류 전체 요약·필드 링크·포커스, 조건부 오류 그룹 재표시, 유효 제출의 `저장 중…`·중복 제출 잠금이 구현됨
 - [x] 신고 시 전 이미지 SHA·순서와 하자 snapshot이 저장되고 삭제 뒤 증거가 보존됨
+- [x] 상품의 다른 대화에서 진행 거래가 있으면 현재 대화의 완료·후기 CTA와 상대 신원을 숨기고, 현재 대화의 최근 거절·취소 기록만 표시함
 - [x] 관리자 다중 증거는 Report 권한과 부모 관계·SHA를 검증하고 내부 저장명을 숨김
 - [x] 미처리 알림 이벤트의 제한형 수동 재처리 명령과 완료 거래 자동차단 복구 회귀 통과
-- [~] 이번 세 기능의 실제 브라우저·키보드·스크린리더 인수와 PostgreSQL 경합·대량 fan-out 부하 검증은 후속 수행
+- [x] 오래 열린 Listing Admin 수정은 새 `BLOCKED`·차단 사유·처리 metadata를 덮어쓰지 못함
+- [~] 이번 세 기능의 전체 브라우저·키보드·스크린리더 인수와 PostgreSQL 경합·대량 fan-out 부하 검증은 후속 수행
+- [~] 3계정 Sybil 신고, 가격 반복 인상·인하 알림 스팸, 전체 채팅 메시지별 신고, `RESERVED` 요청 취소/거절 뒤 예약 해제 정책은 운영 보완 대상
 
 ## PDF 35페이지 최소 기능
 
@@ -54,7 +66,7 @@
 
 - 25~29페이지의 기능·화면·DB를 14개로 중복 제거한 최종 기능표는 `11_CORE_SUBMISSION_CHECKLIST.md`에 둔다.
 - 1차 **6 PASS / 3 PARTIAL / 5 FAIL**은 기능 추가 전 역사적 스냅샷이며 현재 판정은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`의 **14 PASS / 0 PARTIAL / 0 FAIL**이다.
-- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 이후 이미지 첨부 UI 직접 분기 26개, 확장 기능·보안 표적 36개를 각각 재검증했으며 최신 통합 수치는 전체 206개·coverage 94%다. 전체 170개는 확장 기능 추가 전 역사적 스냅샷이다.
+- 공개 프로필·마이페이지·전체 채팅·상품·신고 6개 테스트 클래스 79개가 53.066초에 통과했다. 이후 이미지 첨부 UI 직접 분기 26개, 확장 기능·보안 표적 36개를 각각 재검증했고 직전 통합 수치는 전체 206개·coverage 94%다. 후속 SEC-042~047 최신 결합 40개, 변경 후 전체 Django tests 219개·coverage 94%와 Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff도 통과했다. 전체 170개는 확장 기능 추가 전 역사적 스냅샷이다.
 - [x] TEST-SD001 공개 사용자 프로필과 소개글 조회 - username·bio allowlist, inactive/suspended/staff/superuser 비공개, XSS escape, read-only
 - [x] TEST-SD002 본인 소개글·비밀번호 변경 마이페이지 - bio mass assignment 방지, 현재 비밀번호·강도 validator·256자 사전상한·10회/시간·세션 회전
 - [x] TEST-SD003 실시간 전체 채팅 - 인증·CSRF·서버 발신자·XSS `textContent`·양방향 차단·signed cursor·요청/렌더 상한·rate·hidden pause/backoff·read-only Admin
@@ -86,6 +98,7 @@
 - [x] TEST-A021 Message·Conversation·Favorite·UserBlock·LoginAttempt의 Admin 직접 추가·변경·삭제 거부
 - [x] TEST-A022 신고 처리·차단·정지 action은 Report 행 잠금과 `OPEN` 재검사 뒤 실행
 - [x] TEST-A023 purge된 상품의 stale Listing Admin 저장은 레코드를 다시 생성하지 못함
+- [x] TEST-A024 오래 열린 Listing Admin 수정은 새 `BLOCKED` 상태·사유·처리자·시각을 덮어쓰지 못함
 
 ## 입력 검증 및 표현
 
@@ -128,11 +141,12 @@
 - [x] TEST-Q002 사용자당 상품 등록 10회/시간 제한
 - [x] TEST-Q003 활성 상품 50개·전체 이력 500개 계정 quota를 계정 잠금 경계에서 검사
 - [x] TEST-Q004 메시지 분당 20·일 500, 신고 일 10 상한 코드·회귀 검토
-- [x] TEST-Q005 판매중·예약중·판매완료 허용 전이만 POST로 수행
+- [x] TEST-Q005 판매자 POST는 `ACTIVE`↔`RESERVED`만 허용하고, `SOLD`는 판매자 요청 뒤 해당 구매자가 완료 확인한 경우에만 서비스에서 설정
 - [x] TEST-Q006 관리자 차단 뒤 stale 수정 POST가 차단 상태를 되돌리지 못함
 - [x] TEST-Q007 판매완료 상품에는 새 대화를 시작할 수 없음
 - [x] TEST-Q008 대화 목록 30개 페이지네이션과 Subquery 마지막 메시지로 N+1 제거
 - [x] TEST-Q009 전체 채팅 초기 50·요청 최대 100·DOM 최대 200, poll 40회/분·send 10회/분, signed cursor와 탭 hidden pause·오류 backoff
+- [x] TEST-Q010 수정 폼 hidden revision과 transaction에서 잠근 최신 `updated_at`이 다르면 409로 거부하고 제목·가격·하자·파일·가격 하락 알림 근거를 덮어쓰지 않음
 
 ## 파일 업로드
 
@@ -150,6 +164,10 @@
 - [x] TEST-U012 증거 endpoint의 `view_report` 권한, 매 요청 SHA-256 재검증, 변조 404, `no-store`·`nosniff`, actor log와 증거명 index
 - [x] TEST-U013 기존 이미지 삭제 체크가 302·DB 빈 이미지·commit 후 파일 삭제이며 500이 발생하지 않음 - `FileField.save_form_data()` SEC-031 회귀 통과
 - [x] TEST-U014 이미지 미변경·교체·삭제+업로드 동시 선택·잘못된 이미지에서 기존/신규 파일 생명주기와 기존 증거 보존 회귀 통과
+- [x] TEST-U015 multipart POST·PUT·PATCH 전체 21MiB를 CSRF·폼 파싱 전에 제한하고 known length는 body read 전, 누락·chunked·축소 length는 여러 파일 실제 chunk 누적으로 거부; 정상 upload·안전 400·보안 헤더 유지
+- [x] TEST-U016 하자 조건부 UI는 비-`PRESENT`에서 입력을 숨김·disabled·초기화하고 `OTHER` 상세를 native required로 표시; 서버는 forged 상태/code 모순을 거부하고 add→clear 수정의 stale 상세·code를 제거하며 오류 요약·링크·포커스와 제출 잠금을 제공
+- [x] TEST-U017 업로드 preflight 오류는 거부 파일 객체를 폼에 bind·디코딩하지 않고 제한을 통과한 텍스트만 유지하며 사진 재선택을 안내; 6파일 위조는 sanitizer 호출 전 Django parser의 진단 없는 일반 400
+- [x] TEST-U018 브라우저가 기존·삭제·신규를 합친 최종 5장, 신규 장당 5MiB·합계 20MiB를 사전 검증하고, 추가 사진 썸네일·연속 번호·삭제 checkbox를 직접 결합하며 대표 삭제 시 첫 추가 사진 승격을 안내
 
 ## 오류 응답과 정보노출
 
@@ -169,14 +187,16 @@
 - [x] TEST-R006 가입 포인트 발행 내역은 빈 사용자명이 아니라 시스템 지급으로 표시
 - [x] TEST-R007 Report 원문·snapshot·처리 metadata는 read-only이고 forged Admin POST에도 불변
 - [~] TEST-R008 320px·200% 확대, 키보드 전용, 색 대비와 실제 스크린리더 브라우저 QA
-- [x] TEST-R009 감청색 UI 1440×1000 실화면에서 sticky header·hero·4열 Grid·문서 가로 overflow 0 확인; 1080/900/700/470/360px cascade, header·검색·CTA·상태 변경·페이지네이션·신고 컨트롤 최소 44px, 회원 nav 내부 overflow와 긴 입력 줄바꿈 정적 감사
-- [~] TEST-R010 블랙·화이트 UI에서 1440×1000 홈 4열·overflow 0, 320×800 홈 1열·overflow 0·primary button 44px, 로그인·안전 화면 overflow 0·외부 asset 0 확인; 상품 사진 `filter: none`; 실제 키보드 focus 이동은 최종 사용자 확인 필요
+- [x] TEST-R009 과거 감청색 UI 1440×1000 실화면에서 sticky header·hero·4열 Grid·문서 가로 overflow 0 확인; 1080/900/700/470/360px cascade, header·검색·CTA·상태 변경·페이지네이션·신고 컨트롤 최소 44px, 회원 nav 내부 overflow와 긴 입력 줄바꿈 정적 감사
+- [x] TEST-R010 과거 블랙·화이트 UI에서 1440×1000 홈 4열·overflow 0, 320×800 홈 1열·overflow 0·primary button 44px, 로그인·안전 화면 overflow 0·외부 asset 0 확인; 상품 사진 `filter: none`
 - [x] TEST-R011 실제 브라우저에서 SEC-031 이미지 비우기 저장·상세 placeholder·DB 빈 값·기존 파일 삭제와 DEBUG 404 기술정보 비노출을 재검증; 1440px 마이페이지와 320px 마이페이지·전체 채팅·내 상품의 문서 overflow 0 확인
-- [x] TEST-R012 블랙·화이트 전역에서 이미지 첨부 영역만 저채도 세이지로 한정하고 업로드 사진은 원색 유지; JPEG·PNG·WebP MIME accept와 5MB·1,200만 픽셀 help, guarded URL 현재 이미지, 내부 저장명·`MEDIA_URL` 비노출, 470px 이하 모바일 CSS를 `ListingSecurityTests` 26개 및 CSS 중괄호 987/987로 검증. 주요 조합의 계산 명암비는 본문/패널 11.61:1, 흰색/버튼 7.62:1, 도움말/패널 6.31:1이며 실제 200% 확대·focus 사용성은 사용자 수동 QA로 남김
+- [x] TEST-R012 첨부 영역만 저채도 세이지로 한정하고 업로드 사진은 원색 유지; JPEG·PNG·WebP MIME accept와 5MB·1,200만 픽셀 help, guarded URL 현재 이미지, 내부 저장명·`MEDIA_URL` 비노출, 470px 이하 모바일 CSS를 `ListingSecurityTests` 26개로 검증. 당시 색 조합의 명암비 계산은 과거 팔레트 증적으로 보존
+- [x] TEST-R013 최종 웜톤 UI를 1440×1000 데스크톱과 320×800 모바일에서 확인해 문서 가로 overflow 0, 주요 조작 최소 44px, 상품 사진 원색과 외부 asset 미추가를 확인; 최신 CSS 중괄호 1112/1112. 실제 키보드·스크린리더·200% 확대는 TEST-R008로 계속 대기
+- [x] TEST-R014 상품·메시지·후기 폼이 공통 오류 요약 partial·요약 포커스·native validation·유효 제출 submit lock을 사용하고, 거래 대화는 상품 전체 활성 거래와 현재 대화를 분리해 잘못된 CTA·상대 신원을 공개하지 않음
 
 ## 명시적 N/A
 
-- N/A-001 별도 주문의 구매 요청·승인·거절·취소·환불 상태 머신: PDF 최소 요구사항이 아니며 현재 `Trade`/`Order` 모델과 URL이 없다. 상품 자체의 판매중·예약중·판매완료 상태 전이는 구현·검증했지만 이를 주문 승인으로 주장하지 않는다.
+- N/A-001 결제·배송·환불까지 포함한 별도 주문 상태 머신: PDF 최소 요구사항이 아니며 현재 `Order` 모델·주문 접수·결제 승인·배송·환불 URL은 없다. `Trade`는 쌍방 후기 자격을 위한 완료 요청·확인·거절·취소만 기록하며 이를 실제 주문 승인으로 주장하지 않는다.
 - N/A-002 실제 결제·은행계좌·카드·환전·출금: DEMO POINT만 사용하며 금융정보를 수집하지 않는다.
 - N/A-003 XML, LDAP, DNS 기반 권한 결정, 사용자 URL 서버 호출, 전자서명·웹훅: 해당 기능과 의존성이 없다.
 - N/A-004 자체 C 확장·수동 메모리 해제: Python/Django 애플리케이션 범위에 없다.
@@ -192,4 +212,5 @@
 - [~] REL-T06 최초 GitHub Actions CI·CodeQL·Dependabot 실행 결과와 대상 commit SHA 기록
 - [~] REL-T07 운영 reverse proxy가 `MEDIA_ROOT`·`/_private-media/`를 직접 alias로 노출하지 않고 모든 이미지 요청이 Django 권한검사 view를 통과하는지 배포 설정 검증
 - [x] REL-T08 README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현 정정
-- [x] REL-T09 SEC-031~041 직접 분기, 확장 기능 표적 36개, 전체 206개, coverage 5,778 statements / 343 miss / 94%, Ruff·Bandit·pip-audit·deploy check 최종 통합 검증 완료
+- [x] REL-T09 SEC-031~041 직접 분기, 확장 기능 표적 36개, 직전 전체 206개, coverage 5,778 statements / 343 miss / 94%, Ruff·Bandit·pip-audit·deploy check 통합 검증 완료
+- [x] REL-T10 SEC-042~047 최신 결합 40개, 전체 tests 219개, coverage 94%, Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff 최종 로컬 게이트 통과

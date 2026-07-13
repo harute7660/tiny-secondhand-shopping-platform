@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}{% if listing %}상품 수정{% else %}상품 등록{% endif %} · TINY MARKET{% endblock %}
 {% block body_class %}form-page{% endblock %}
@@ -23,27 +24,25 @@
       <div><h2>{% if listing %}상품 정보 수정{% else %}상품 기본 정보{% endif %}</h2><p><span class="required-mark">*</span> 표시는 꼭 입력해 주세요.</p></div>
     </div>
 
-    {% if form.non_field_errors %}
-      <div class="form-alert" role="alert">
-        <strong>입력 내용을 다시 확인해 주세요.</strong>
-        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
-      </div>
-    {% endif %}
+    {% include "includes/form_error_summary.html" %}
 
-    <form method="post" enctype="multipart/form-data" class="stack-form listing-form" novalidate>
+    <form method="post" enctype="multipart/form-data" class="stack-form listing-form" data-listing-form data-secure-form data-max-files="5" data-max-file-bytes="5242880" data-max-total-bytes="20971520" data-current-primary="{% if listing.image %}1{% else %}0{% endif %}" data-current-extra="{{ form.existing_extra_images|length }}">
       {% csrf_token %}
       {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+      <div class="form-alert upload-client-error" role="alert" data-upload-client-error hidden></div>
       {% for field in form.visible_fields %}
-        <div class="field-group{% if field.errors %} field-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} checkbox-field{% endif %}{% if field.field.widget.input_type == 'file' %} upload-field{% endif %}">
+        <div class="field-group{% if not preflight_error and field.errors %} field-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} checkbox-field{% endif %}{% if field.field.widget.input_type == 'file' or field.name == 'remove_extra_images' %} upload-field{% endif %}{% if field.name == 'defects' or field.name == 'defect_details' %} defect-dependent-field{% endif %}"{% if field.name == 'defects' or field.name == 'defect_details' %} data-defect-dependent{% endif %}>
           {% if field.name == 'remove_extra_images' %}
             <fieldset class="choice-fieldset">
               <legend>{{ field.label }}</legend>
               <div class="existing-extra-gallery" aria-label="현재 추가 사진">
-                {% for extra in form.existing_extra_images %}
-                  <img src="{% url 'market:listing_extra_image' listing.pk extra.pk %}" alt="현재 추가 상품 사진 {{ forloop.counter }}">
+                {% for extra, option in form.existing_extra_image_options %}
+                  <label class="existing-extra-option">
+                    <img src="{% url 'market:listing_extra_image' listing.pk extra.pk %}" alt="현재 상품 사진 {{ forloop.counter|add:'1' }}">
+                    <span class="existing-extra-choice">{{ option.tag }}<span>{{ option.choice_label }} 삭제</span></span>
+                  </label>
                 {% endfor %}
               </div>
-              {{ field }}
             </fieldset>
           {% elif field.name == 'defects' %}
             <fieldset class="choice-fieldset">
@@ -57,13 +56,13 @@
             {{ field }}
           {% endif %}
           {% if field.help_text %}<p class="field-help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}
-          {% if field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
+          {% if not preflight_error and field.errors %}<div id="{{ field.auto_id }}_error" role="alert">{% for error in field.errors %}<p class="field-error-text">{{ error }}</p>{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
 
       <div class="form-actions">
         {% if listing %}<a class="button button-quiet" href="{% url 'market:listing_detail' listing.pk %}">취소</a>{% else %}<a class="button button-quiet" href="{% url 'market:home' %}">취소</a>{% endif %}
-        <button class="button button-primary" type="submit">{% if listing %}수정 내용 저장{% else %}상품 등록하기{% endif %}</button>
+        <button class="button button-primary" type="submit" data-submit-button data-pending-label="저장 중…">{% if listing %}수정 내용 저장{% else %}상품 등록하기{% endif %}</button>
       </div>
     </form>
   </div>
@@ -85,4 +84,8 @@
     </div>
   </aside>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/listing_form.js' %}?v=20260713-defect-flow-1"></script>
 {% endblock %}

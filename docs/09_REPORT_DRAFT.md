@@ -32,18 +32,22 @@
 
 TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다. 강의 PDF 35페이지의 최소 기능인 회원가입, 상품 등록·조회, 사용자 간 소통, 악성 사용자·상품 차단, 사용자 간 송금, 상품 검색, 관리자 관리를 모두 구현 대상으로 삼았다. 당근의 간단한 지역 거래·앱 내 대화·신고 경험과 번개장터의 전국 검색·세분 필터·거래 기록 장점을 선택적으로 결합했다.
 
-2026-07-13에 사용자가 체크리스트 범위를 PDF 25~29페이지의 상세 시스템 설계 기능으로 정정했다. 해당 페이지를 다시 렌더링·추출하고 코드와 대조한 최초 감사 결과는 14개 중 6 PASS, 3 PARTIAL, 5 FAIL이었다. 이에 공개 사용자 프로필, 소개글·비밀번호 변경 마이페이지, 내 상품 화면, 로그인 회원 전체 채팅, 신고 횟수 기반 상품·사용자 자동조치를 구현했다. 기능 존재 여부와 제출 완료는 구분하며, 로컬 전체 자동검사와 브라우저 보안 흐름은 재검증했지만 Public GitHub·원격 CI·최종 사용자 인수·보고서 PDF를 마치기 전에는 제출 완료로 표현하지 않는다.
+2026-07-13에 사용자가 체크리스트 범위를 PDF 25~29페이지의 상세 시스템 설계 기능으로 정정했다. 해당 페이지를 다시 렌더링·추출하고 코드와 대조한 최초 감사 결과는 14개 중 6 PASS, 3 PARTIAL, 5 FAIL이었다. 이에 공개 사용자 프로필, 소개글·비밀번호 변경 마이페이지, 내 상품 화면, 로그인 회원 전체 채팅, 신고 횟수 기반 상품·사용자 자동조치를 구현했다. 기능 존재 여부와 제출 완료는 구분한다. 현재 로컬 기능 14개는 PASS지만 Public GitHub·clean clone·원격 CI·확장 기능 전체 브라우저 인수·보고서 PDF·지정 파일명·LMS 제출을 마치기 전에는 최종 제출 준비 완료로 표현하지 않는다.
 
 보안은 기능 구현 뒤 덧붙이는 항목이 아니라 요구사항과 설계 단계부터 불변조건으로 정의했다. Django의 세션·CSRF·Form·ORM을 활용해 자체 인증·토큰 구현을 피했고, 객체 소유권·대화 참여자·관리자 세부 권한을 서버에서 다시 검사했다. 상품 이미지는 디코딩 후 메타데이터 없는 JPEG로 재인코딩하며, 송금 요구는 현금화할 수 없는 **DEMO POINT**와 원자적 이중 원장으로 제한했다.
 
 보안 기준은 KISA 공식 게시물에서 확인한 **소프트웨어 개발보안 가이드(2021.12.29)**와 **Python 시큐어코딩 가이드(2023년 개정본)**이다. 사용자 요청의 “2026 시큐어코딩 가이드”라는 표현은 개발 기준연도를 뜻하는 것으로 해석하되, 존재를 확인하지 못한 2026 판본을 임의로 인용하지 않았다. 구현단계 7개 영역·49개 보안약점을 전수 판정했으며 현재 범위에서 37개는 적용, 12개는 기능·언어상 N/A로 분류했다. N/A도 단순 생략하지 않고 관련 기능과 위험 API가 없음을 확인하고, 향후 기능 추가 시 재평가하도록 했다.
 
-마지막 보안 감사에서 인증 시도 동시성, 관리자 권한 상승, 신고 증거 변경, 관리자 이미지 처리 우회, 검증 전 자원 소모 같은 문제를 추가로 발견해 코드를 변경했다. 이후 2026-07-13 사용자 수동 QA에서 이미지 삭제 500과 DEBUG 기술 화면 정보노출을 추가 발견해 SEC-031·032로 등록했다. SEC-031은 `FileField.save_form_data()` 정규화로, SEC-032는 모든 환경의 `SafeExceptionMiddleware`와 오류 template 실패에도 동작하는 standalone fallback으로 수정했다. 이어 기본 이미지 widget이 편집 HTML에 내부 storage filename과 무효 `/_private-media/` 링크를 표시하는 약점을 찾아 `ProtectedListingImageInput`·권한검사 이미지 URL·일반 문구로 바꿨다. 관련 기능·보안 표적 회귀와 전체 품질 게이트를 모두 통과했고, 이미지 삭제와 DEBUG 404 비노출은 앞선 실제 브라우저 검사로, 후속 widget의 저장명 비노출은 자동 회귀로 확인했다.
+마지막 보안 감사에서 인증 시도 동시성, 관리자 권한 상승, 신고 증거 변경, 관리자 이미지 처리 우회, 검증 전 자원 소모 같은 문제를 추가로 발견해 코드를 변경했다. 이후 2026-07-13 사용자 수동 QA에서 이미지 삭제 500과 DEBUG 기술 화면 정보노출을 추가 발견해 SEC-031·032로 등록했다. SEC-031은 `FileField.save_form_data()` 정규화로, SEC-032는 모든 환경의 `SafeExceptionMiddleware`와 오류 template 실패에도 동작하는 standalone fallback으로 수정했다. 이어 기본 이미지 widget이 편집 HTML에 내부 storage filename과 무효 `/_private-media/` 링크를 표시하는 약점을 찾아 `ProtectedListingImageInput`·권한검사 이미지 URL·일반 문구로 바꿨다. 후속 감사에서는 비공개 `PENDING` 후기의 판매자 평균 조기 반영(SEC-042), `/` 구분 전화번호 PII 필터 우회(SEC-043), 오래 열린 Listing Admin 폼의 새 차단 상태 덮어쓰기(SEC-044), multipart 전체 body가 Form 검사 전에 자원을 소비하는 경계(SEC-045)를 추가로 수정·완화했다. 하자 조건부 입력의 stale·모순 상태와 오류·처리 중 피드백 부족(SEC-046)은 조건부 UI, 서버 독립 검증·정규화, 오류 요약·포커스와 제출 잠금으로 보완했다. 마지막 완성도 감사에서는 두 탭 상품 수정의 lost update와 상품 전체 거래·현재 대화 CTA 불일치(SEC-047)를 발견해 hidden revision과 잠근 `updated_at` 비교·409, 다른 거래 CTA·상대 신원 비공개로 완화했다. 업로드 preflight는 거부 파일 객체를 재결합·디코딩하지 않고 안전한 텍스트만 유지하며 사진 재선택을 안내하고, 추가 사진 썸네일·삭제 선택·번호와 대표 승격 안내를 일치시켰다. 상품·메시지·후기 폼도 같은 오류 요약·포커스·native validation·submit lock을 사용한다.
 
 - 2026-07-13 수정 분기 표적 회귀: **관련 8개 테스트 클래스 87개 전부 통과 / 53.390초 / system check 문제 0건**
-- 세 확장 기능 포함 비계측 전체 Django tests: **206개 전부 통과 / 114.641초 / system check 문제 0건**
-- Coverage 계측 실행·정적 검사: **206개 / 115.434초, 5,778 statements / 343 miss / 94%, migration drift 없음, Ruff·Bandit·`git diff --check` 문제 0건, CSS 중괄호 987/987**
-- 의존성·배포 검사: 이번 UI/widget 변경은 의존성과 운영설정을 바꾸지 않았으며, 직전 최종 게이트의 **pip-audit·deploy check 문제 0건**을 유지한다.
+- 세 확장 기능까지의 직전 비계측 전체 Django tests: **206개 전부 통과 / 114.641초 / system check 문제 0건**
+- 직전 Coverage·정적 검사: **206개 / 115.434초, 5,778 statements / 343 miss / 94%, migration drift 없음, Ruff·Bandit·`git diff --check` 문제 0건**
+- SEC-042~044 후속 직접 회귀: `market.test_trade_reviews` + `market.tests.ListingAdminSecurityTests` **16개 전부 통과 / 17.393초 / system check 문제 0건**
+- SEC-045 multipart 직접 회귀: `config.tests.MultipartUploadLimitTests` **7개 전부 통과 / 0.023초 / system check 문제 0건**
+- SEC-042~047 최신 결합 직접 회귀: 다중 이미지·multipart·Listing Admin·거래 후기 4개 class **40개 전부 통과 / 17.697초 / system check 문제 0건 / Ruff PASS**
+- 변경 후 전체 Django tests: **219 / 219 전부 통과 / 157.165초 / system check 문제 0건**
+- 변경 후 최종 품질 게이트: **coverage 계측 219 / 219 통과 / 162.533초 / 6,037 statements / 354 miss / 94%; Ruff lint PASS·46 files formatted; Bandit 0; pip-audit 알려진 취약점 0; Django check·deploy warning 0; migration 변경 없음; Node JavaScript 구문·`git diff --check` PASS**
 - 보존용 2026-07-12 스냅샷: **120개 통과, 3,169 statements / 223 miss / 93%, Ruff/Bandit/pip-audit/deploy 문제 0건**. SEC-031·032와 신규 기능 분기를 포함하지 않은 과거 수치다.
 
 ---
@@ -72,10 +76,11 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 | 2026-07-12 | UI 재설계 | `#1E3A8A` 디자인 토큰, Flexbox·Grid, 반응형 header·card·button·form 구현 | 외부 UI 의존성 없이 접근성·CSP 유지 |
 | 2026-07-13 | 모노크롬 UI 전환·체크리스트 정정 | 검정·흰색·중립 회색 UI, 원색 상품 사진, PDF 25~29페이지 14개 시스템 기능표 | 1440×1000·320×800 실측, 5페이지 원문 대조, 현재 코드 실제 수행본 |
 | 2026-07-13 | 상세 기능·보안 보강 | 프로필·마이페이지·내 상품·전체 채팅·3인 신고 임계치, SEC-031·032 수정 | 관련 8개 클래스 87개 표적 회귀와 당시 전체 168개·94% coverage·정적·공급망·deploy 통과 |
-| 2026-07-13 | 첨부 UI·보호 widget 보강 | 전체 모노크롬을 유지하고 첨부 영역만 저채도 세이지로 구분, 내부 저장명·무효 링크 비노출 | 당시 `ListingSecurityTests` 26개와 전체 170개·94% 통과; 후속 최신 게이트는 206개·94% |
+| 2026-07-13 | 첨부 UI·보호 widget 보강 | 당시 모노크롬을 유지하고 첨부 영역만 저채도 세이지로 구분, 내부 저장명·무효 링크 비노출 | 당시 `ListingSecurityTests` 26개와 전체 170개·94% 통과; 이후 확장 기능 시점 기준선은 206개·94% |
 | 2026-07-13 | 후기·알림·다중 사진·하자 확장 | 실제 거래 신뢰, 탐색 비용, 하자·증거 품질 강화 | 표적 36개, 전체 206개, coverage 94%, SEC-034~041 기록 |
+| 2026-07-13 | 웜톤 UI·후속 보안·작성·거래 UX 감사 | 크림·warm-white·테라코타 팔레트, 공개 후기 집계·slash PII·Admin stale overwrite·multipart pre-parser 상한, 조건부 하자, 안전한 upload preflight, 썸네일-삭제 결합, 두 탭 revision 409, 거래 CTA 정합성, 공통 오류·제출 상태 보완 | 1440×1000·320×800 overflow 0·주요 조작 44px, 최신 결합 40개 / 17.697초, 전체 219개 / 157.165초, 최신 coverage 94%와 정적·공급망·deploy·migration 게이트 PASS |
 | 2026-07-12~13 | 검토·수정 | 병렬 코드리뷰, 브라우저 QA, 정적·의존성 검사, 발견 약점 수정 | 미조치 Critical/High 0건 목표 |
-| 2026-07-13 | 최종 로컬 검증 | 전체 회귀, coverage, lint, Bandit, pip-audit, deploy check, migration·브라우저 보안 흐름 | 현재 206개·94%·정적 검사 0건과 앞선 실제 브라우저 결과를 구분해 기록 |
+| 2026-07-13 | 최종 로컬 검증 | 전체 회귀, coverage, lint, Bandit, pip-audit, deploy check, migration·JavaScript·diff·브라우저 보안 흐름 | 전체 219개, coverage 94%, Ruff·Bandit·pip-audit·check/deploy·migration·Node syntax·diff 전부 PASS |
 | 2026-07-13 | 릴리스·문서 | clean clone README 재현, Public GitHub, SHA/tag, 보고서 PDF 렌더링 | 로그아웃 공개 확인과 PDF 육안검수 필요 |
 | 2026-07-24 이전 | 제출 | 지정 파일명, PDF 링크·내용, 업로드 결과 재확인 | 23:59:59 전 제출 완료 |
 
@@ -88,7 +93,7 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 | ID | PDF 요구사항 | 인수 조건 | 구현 요소 | 핵심 보안조건 |
 |---|---|---|---|---|
 | REQ-F001 | 사람들이 플랫폼에 가입 | 정상 가입·로그인·POST 로그아웃, 공개 프로필, 소개글·비밀번호 변경 | `accounts.User`, 가입·로그인·프로필·마이페이지 view | 비밀번호 해시·validators, 공개 필드 allowlist, 현재 비밀번호, 입력·반복시도 제한, 세션 hash 갱신 |
-| REQ-F002 | 상품 등록·조회 | 본인 상품 목록·등록·수정·상태 변경·soft delete, 공개 상세 | `Listing`, 내 상품 view, 이미지 guarded endpoint | 판매자 서버 결정, IDOR 차단, 가격·상태 제약, 안전한 이미지 처리·삭제 sentinel 정규화 |
+| REQ-F002 | 상품 등록·조회 | 본인 상품 목록·등록·수정·상태 변경·soft delete, 공개 상세 | `Listing`, 내 상품 view, 이미지 guarded endpoint | 판매자 서버 결정, IDOR 차단, 가격·상태 제약, 안전한 이미지 처리·삭제 sentinel 정규화, revision stale 저장 409 |
 | REQ-F003 | 사용자끼리 소통 | 상품별 1:1 대화와 로그인 회원 전체 채팅 | `Conversation`, `Message`, `GlobalChatMessage` | 참여자·인증 접근, 발신자 서버 결정, 차단 필터, CSRF·XSS·길이·속도·증분 조회 제한 |
 | REQ-F004 | 악성 사용자·상품 차단 | 대화 상대 차단·신고, 상품 신고, 3인 OPEN 신고 자동조치, 관리자 검토·복구 | `UserBlock`, `Report`, moderation service, Admin action | 실제 대화에서 대상 파생, 고유 신고자 원자 집계, 보호 계정, 임시 제재·증거 불변·감사로그 |
 | REQ-F005 | 사용자 간 송금 | 잔액 범위 내 DEMO POINT 송금과 거래내역 | `WalletAccount`, `Transfer`, `LedgerEntry` | 원자적 조건부 차감, 멱등키, 이중 원장, append-only |
@@ -114,7 +119,7 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 | ID | 요구사항 | 반영 위치 | 최종 확인 |
 |---|---|---|---|
 | REQ-D001 | 요구사항 분석부터 유지보수까지 전 과정 보고 | 본 문서와 `docs/00~12` | `[최종 확인 필요]` |
-| REQ-D002 | 발견한 보안약점과 변경 내용 설명 | 본 문서 9장, `docs/04_SECURITY_FINDINGS.md` | SEC-001~032 동기화; SEC-031·032 Fixed, 표적·전체·브라우저 재검증 완료 |
+| REQ-D002 | 발견한 보안약점과 변경 내용 설명 | 본 문서 9장, `docs/04_SECURITY_FINDINGS.md` | SEC-001~047·UX-001 동기화; 최신 결합 40개·전체 219개·최종 품질 게이트 통과 |
 | REQ-D003 | GitHub Public 저장소 | 표지·15장 | `[공개 URL 입력 및 로그아웃 확인 필요]` |
 | REQ-D004 | README 환경 설정·실행 방법 | `README.md` | `[클린 환경 재현 결과 입력 필요]` |
 | REQ-D005 | AI 도구 적극 활용 | 본 문서 13장, `docs/05_AI_USAGE_LOG.md` | `[최종 AI 사용 건 갱신 필요]` |
@@ -138,7 +143,7 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 - AI 가격추천·정품검수·사기판정
 - 별도 주문의 구매요청·승인·거절·취소·환불 상태 머신
 
-이 제외는 최소 요구사항을 축소하기 위한 것이 아니라 검증할 수 없는 외부 비밀키, SSRF, 웹훅 위조, 개인정보, 금융규제, 환불 상태 경쟁조건을 현재 버전에 추가하지 않기 위한 보안 결정이다. 상품의 `ACTIVE/RESERVED/SOLD` 상태 전이는 구현했지만 별도 주문·환불 시스템을 구현했다고 주장하지 않는다. 전체 채팅은 제외 목록에 포함하지 않고 인증 회원 기능으로 구현했다.
+이 제외는 최소 요구사항을 축소하기 위한 것이 아니라 검증할 수 없는 외부 비밀키, SSRF, 웹훅 위조, 개인정보, 금융규제, 환불 상태 경쟁조건을 현재 버전에 추가하지 않기 위한 보안 결정이다. 판매자의 `ACTIVE`↔`RESERVED`와 쌍방 후기 자격용 `Trade`에서 구매자 확인에 따른 `SOLD`는 구현했지만, 결제·배송·환불을 포함한 별도 `Order` 시스템을 구현했다고 주장하지 않는다. 전체 채팅은 제외 목록에 포함하지 않고 인증 회원 기능으로 구현했다.
 
 ---
 
@@ -210,7 +215,7 @@ flowchart LR
 | `.github` | CI, CodeQL, Dependabot | workflow와 설정 파일 |
 | `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~12` |
 
-UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 초기 감청색 설계 뒤 사용자 요청으로 현재 UI chrome을 검정·흰색·중립 회색으로 전환했다. 검정 hero·primary button, 흰색 header·card·form, 중립 border·shadow로 정보 위계를 단순화했다. 단, 파일을 선택하는 첨부 영역은 저채도 세이지 배경과 짙은 녹색 조작 요소로 범위를 한정해 입력 맥락을 구분했다. 이는 특정 색의 의학적 효능을 단정한 것이 아니라 낮은 채도와 충분한 전경·배경 대비를 선택한 것이다. 상품 색상은 구매 판단 정보이므로 업로드 사진 자체는 원색을 유지하고 오류·성공 상태색도 안전 의미 전달 범위에서 유지한다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
+UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 초기 감청색과 후속 모노크롬 실험을 거쳐 최종 UI는 크림 canvas `#f7f3ec`, warm-white surface `#fffdfc`, 짙은 갈색 text `#211d19`, 테라코타 primary `#8b3e2a`를 사용하는 웜톤으로 정리했다. 파일을 선택하는 첨부 영역은 저채도 세이지 배경과 짙은 녹색 조작 요소로 범위를 한정해 입력 맥락을 구분한다. 이는 특정 색의 의학적 효능을 단정한 것이 아니라 낮은 채도와 충분한 전경·배경 대비를 선택한 것이다. 상품 색상은 구매 판단 정보이므로 업로드 사진 자체는 원색을 유지하고 오류·성공 상태색도 색과 텍스트를 함께 사용한다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
 
 ### 5.3 데이터 모델
 
@@ -278,21 +283,21 @@ erDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> ACTIVE
-    ACTIVE --> RESERVED
-    ACTIVE --> SOLD
-    RESERVED --> ACTIVE
-    RESERVED --> SOLD
-    SOLD --> ACTIVE
+    ACTIVE --> RESERVED: 판매자 예약
+    RESERVED --> ACTIVE: 판매자 예약 해제
+    ACTIVE --> SOLD: 구매자 완료 확인
+    RESERVED --> SOLD: 구매자 완료 확인
     ACTIVE --> DELETED: 판매자 soft delete
     RESERVED --> DELETED: 판매자 soft delete
-    SOLD --> DELETED: 판매자 soft delete
     ACTIVE --> BLOCKED: 관리자 조치 또는 3인 자동 임시조치
     RESERVED --> BLOCKED: 관리자 조치 또는 3인 자동 임시조치
     SOLD --> BLOCKED: 관리자 조치 또는 3인 자동 임시조치
-    BLOCKED --> ACTIVE: 권한 있는 관리자의 자동조치 복구
+    BLOCKED --> ACTIVE: 자동차단 복구, 진행 거래 없음
+    BLOCKED --> RESERVED: 자동차단 복구, 완료 대기 거래
+    BLOCKED --> SOLD: 자동차단 복구, 완료 거래
 ```
 
-수정·삭제 때 DB에서 현재 행을 다시 읽고 소유자와 최신 상태를 검사해, 사용자가 편집 화면을 연 뒤 관리자가 차단한 상품을 오래된 POST가 되살리지 못하게 했다. SQLite의 `select_for_update()` 한계 때문에 실제 다중 사용자 운영 전 PostgreSQL에서 경쟁 부하 시험을 다시 해야 한다.
+판매자가 직접 바꿀 수 있는 상태는 `ACTIVE`↔`RESERVED`뿐이다. `SOLD`는 판매자가 상품 상태 버튼으로 정하지 않고, 상품에 묶인 1:1 대화에서 판매자가 완료를 요청한 뒤 해당 구매자가 확인했을 때만 거래 서비스가 설정한다. 완료된 거래가 있으면 상품 수정·삭제·재판매·새 대화 같은 일반 mutation을 모두 거부한다. 수정·삭제·Admin 저장 때 DB에서 현재 행을 다시 읽고 소유자·최신 상태·차단 metadata를 검사해 오래된 POST가 관리자 또는 자동 moderation의 차단을 되돌리지 못하게 했다. 일반 수정 폼은 hidden revision과 잠근 최신 `updated_at`도 비교해 두 탭의 제목·가격·하자 lost update를 409로 거부하고 알림 event 근거를 보호한다. 기존 호환상 revision 누락 소유자 요청은 강제 거부하지 않으므로 API화할 때 필수 revision/`If-Match`가 필요하다. SQLite의 `select_for_update()` 한계 때문에 실제 다중 사용자 운영 전 PostgreSQL에서 경쟁 부하 시험을 다시 해야 한다.
 
 ### 5.6 위협 모델과 신뢰경계
 
@@ -315,11 +320,11 @@ stateDiagram-v2
 
 | 기능 | 추가 이유 | 권한·데이터 설계 | 핵심 불변조건 |
 |---|---|---|---|
-| 거래 완료 쌍방 후기 | 실제 거래 경험만 신뢰 판단에 사용 | `Conversation`에 묶인 `Trade`, 방향별 `Review` | 판매자 요청+해당 구매자 확인, 완료 전 작성 금지, 양측 각 1건, 두 후기 동시 공개 |
+| 거래 완료 쌍방 후기 | 실제 거래 경험만 신뢰 판단에 사용 | 상품·buyer·seller가 고정된 `Conversation`에 묶인 `Trade`, 방향별 `Review`; 상품 전체 활성 거래와 현재 대화 거래 분리 | 판매자 요청+해당 구매자 확인, 다른 대화 진행 시 CTA·상대 신원 비공개, 현재 대화 거절·취소 기록, 완료 전 작성 금지, 양측 각 1건, 두 후기 동시 공개, `PUBLIC`만 개수·평균 집계 |
 | 관심 검색·가격 하락 알림 | 반복 탐색 비용과 가격 변경 누락 감소 | 정규화 `SavedSearch`, 구조화 `ListingEvent`, 수신자별 `Notification` | 이벤트 이후 구독 비소급, 수신자+이벤트 1건, 차단·정지·판매자 제외, 현재 비공개 정보 숨김 |
-| 다중 사진·하자 | 상품 상태 설명력과 신고 증거 강화 | 대표 1장+`ListingImage` 4장, 허용목록 `ListingDefect`, `ReportImageEvidence` | 총 5장·20MB, 부모-자식 인가, 실패 파일 정리, 신고 당시 전 사진 SHA와 하자 snapshot |
+| 다중 사진·하자 | 상품 상태 설명력과 신고 증거 강화 | 대표 1장+`ListingImage` 4장, 보호 썸네일-삭제 checkbox 결합, 허용목록 `ListingDefect`, `ReportImageEvidence` | client 5장·5MiB/장·20MiB 보조 검사, 서버 preflight 파일 미결합·6파일 generic 400, 부모-자식 인가, hidden revision 409, 실패 파일 정리, 신고 당시 전 사진 SHA와 하자 snapshot |
 
-후기 자격은 `Listing.SOLD`가 아니라 특정 대화의 `Trade.COMPLETED`만 근거로 삼는다. 판매자 단독 상태 변경은 구매자를 증명하지 못하기 때문이다. 알림은 자유 문구를 저장하지 않고 사실 이벤트를 저장해 중복·XSS·비공개 전환을 다룬다. 다중 이미지는 파일 수만 늘리지 않고 업로드 전체 자원 제한, storage rollback, 신고 증거 수명주기를 함께 설계했다.
+후기 자격은 `Listing.SOLD`가 아니라 특정 대화의 `Trade.COMPLETED`만 근거로 삼는다. 판매자 단독 상태 변경은 구매자를 증명하지 못하기 때문이다. 다른 대화에서 거래가 진행 중이면 그 사실만 일반 문구로 알리고 완료 CTA와 상대 식별정보는 노출하지 않는다. 알림은 자유 문구를 저장하지 않고 사실 이벤트를 저장해 중복·XSS·비공개 전환을 다룬다. 다중 이미지는 파일 수만 늘리지 않고 업로드 전체 자원 제한, 거부 파일 비결합, 썸네일-삭제 선택의 직접 결합, 동시 수정 revision, storage rollback, 신고 증거 수명주기를 함께 설계했다.
 
 ---
 
@@ -343,17 +348,25 @@ stateDiagram-v2
 
 파일 input의 `accept="image/jpeg,image/png,image/webp"`와 “5MB 이하·1,200만 픽셀 이하” 안내는 사용자가 올바른 파일을 선택하도록 돕는 UX일 뿐 공격자가 우회할 수 있는 클라이언트 힌트다. 따라서 이를 서버 검증의 대체물로 사용하지 않고 위 디코딩·형식·크기·픽셀·재인코딩 검사를 그대로 유지한다. 편집 화면은 기본 `ClearableFileInput` 대신 `ProtectedListingImageInput`을 사용한다. 기존 파일은 내부 storage filename이나 `MEDIA_URL`을 렌더링하지 않고, 기존 `listing_image` 권한검사 URL의 미리보기와 일반 문구·삭제 checkbox만 제공한다.
 
+추가 사진은 보호된 썸네일, 대표 사진부터 이어지는 번호와 해당 삭제 checkbox를 하나의 label에 직접 결합해 사용자가 선택 대상을 오인하지 않게 했다. 대표 사진 삭제를 선택하면 남은 첫 추가 사진이 대표로 승격된다는 결과도 화면에 설명한다. 브라우저 JavaScript는 기존·삭제·새 선택을 합친 최종 5장, 신규 파일 장당 5MiB와 합계 20MiB를 제출 전에 검사하지만, 이 값은 신뢰하지 않고 서버가 다시 판단한다.
+
 SEC-031의 원인은 잠근 최신 Listing으로 값을 복사할 때 `ClearableFileInput`의 삭제 sentinel `False`를 파일 객체처럼 직접 대입한 것이었다. 수정 후 text field는 기존 허용목록으로 복사하고 image는 Django `FileField.save_form_data()`에 전달한다. framework가 삭제를 빈 파일명으로 정규화하므로 기존 이미지 유지·삭제·교체를 구분하면서 boolean의 `.name` 500을 없애고 기존 transaction·commit 파일 정리 의미도 유지한다.
 
 운영 reverse proxy/Nginx가 `MEDIA_ROOT` 또는 `/_private-media/`를 정적 alias로 직접 서빙하면 guarded endpoint와 신고 증거 비공개를 우회한다. 따라서 두 경로를 절대 외부에 직접 노출하지 않고 모든 이미지 요청을 Django의 권한검사 이미지 view로만 통과시킨다.
 
-공개 view뿐 아니라 Django Admin의 상품 Form도 같은 이미지 sanitizer를 사용한다. Admin을 별도 우회 업로드 경로로 남기지 않았고, 상품 추가를 비활성화하며 판매자·상태·차단 메타데이터는 action 또는 제한된 경로로만 변경한다. Admin 변경 직전 현재 Listing 행을 잠가 다시 읽고, 이미 purge된 상품의 stale 객체를 저장해 레코드를 되살리는 요청은 거부한다.
+다중 이미지 Form의 20MB 검사는 CSRF가 `request.POST`를 파싱한 뒤에야 실행될 수 있으므로 단독 자원 통제로 충분하지 않다. `MultipartUploadLimitMiddleware`를 CSRF보다 앞에 두어 multipart POST·PUT·PATCH의 알려진 21MiB 초과 길이는 body read 전 거부하고, 길이가 누락·chunked·축소된 경우에는 첫 upload handler가 여러 파일의 실제 chunk를 요청 단위로 누적해 같은 상한을 적용한다. 초과 응답은 내부 예외명·설정값 없이 일반 400과 보안 헤더를 사용한다. reverse proxy가 Django 전에 body를 수신하는 비용은 proxy body/time/connection limit으로 별도 통제해야 한다.
+
+허용하지 않은 파일 field나 합계 preflight가 실패하면 거부 파일 객체를 `ListingForm`에 다시 bind하거나 디코딩하지 않는다. 길이 상한을 통과한 제목·설명 등 안전한 텍스트만 같은 폼에 유지하고 브라우저 보안상 사진은 다시 선택해야 함을 명확히 알린다. 전역 `DATA_UPLOAD_MAX_NUMBER_FILES=5`를 넘긴 6파일 위조는 view에 도달하기 전에 Django parser의 진단 없는 일반 400으로 종료한다. 수정 폼은 GET 시 `updated_at` microseconds 기반 hidden revision을 발급하고, POST transaction에서 잠근 최신 revision이 다르면 409로 전체 저장을 거부해 제목·가격·하자·파일과 가격 하락 event 근거의 lost update를 막는다.
+
+공개 view뿐 아니라 Django Admin의 상품 Form도 같은 이미지 sanitizer를 사용한다. Admin을 별도 우회 업로드 경로로 남기지 않았고, 상품 추가를 비활성화하며 판매자·상태·차단 메타데이터는 action 또는 제한된 경로로만 변경한다. Admin 변경 직전 현재 Listing 행을 잠가 다시 읽고, 이미 purge된 상품의 stale 객체 저장을 거부한다. 또한 폼을 연 뒤 새로 바뀐 seller·status·차단 처리자·사유·시각이 하나라도 다르면 stale 저장을 거부하고, 일치할 때도 명시한 편집 가능 필드만 최신 잠금 객체에 복사한다.
 
 ### 6.3 대화·차단·신고
 
-한 상품에서 구매자와 판매자의 대화는 한 개만 생성되며, 제3자는 UUID를 알아도 접근할 수 없다. 발신자는 POST 값이 아니라 세션 사용자이고 차단 관계가 생기면 새 메시지와 송금을 막는다. 대화 목록은 30개씩 페이지네이션하고 마지막 메시지를 Subquery annotation으로 조회해 N+1 쿼리를 줄였다.
+1:1 대화는 임의 사용자끼리 만드는 범용 DM이 아니라 **특정 상품·구매자·판매자 조합**에 묶인다. 같은 조합의 대화는 한 개만 생성되며, 제3자는 UUID를 알아도 접근할 수 없다. 발신자는 POST 값이 아니라 세션 사용자이고 차단 관계가 생기면 새 메시지와 송금을 막는다. 대화 목록은 30개씩 페이지네이션하고 마지막 메시지를 Subquery annotation으로 조회해 N+1 쿼리를 줄였다.
 
-PDF의 전체 채팅은 WebSocket/SSE 장기 연결 대신 2초마다 새 메시지만 가져오는 인증 HTTP polling으로 구현했다. 현재 동기식 Django에 channel layer·연결 coordinator를 추가하지 않고 기존 세션, CSRF, cache rate limit, 보안 헤더를 재사용해 검증 가능한 범위를 유지하기 위해서다. cursor는 서명하고 응답은 최대 100건, 초기 50건이며 사용자별 조회 분당 40회·송신 10회, 본문 1,000자로 제한한다. 브라우저는 hidden tab에서 polling을 멈추고 오류 시 backoff하며 이전 요청과 겹치지 않고 DOM 메시지를 200개 이하로 유지한다. JSON의 사용자 입력은 `innerHTML`이 아니라 `textContent`로 새 노드에 넣는다. 차단 관계는 양방향으로 숨기고 정지·비활성 발신자 메시지도 조회하지 않는다. trade-off는 최대 약 2초 지연과 사용자 수에 비례한 polling 부하다.
+한 상품에 여러 구매자 대화가 있을 수 있으므로 상품 전체의 진행·완료 거래와 현재 대화의 거래를 구분한다. 다른 대화에서 완료 확인이 진행 중이면 현재 대화에는 완료·후기 CTA를 보이지 않고 “다른 거래가 진행 중”이라는 일반 안내만 제공해 상대 구매자 신원을 공개하지 않는다. 현재 대화에서 완료 요청이 거절 또는 취소되었다면 최신 닫힘 상태와 시각을 보여 사용자가 다음 행동을 이해하게 한다. 실제 상태 변경 service는 기존 참여자·거래 상태·UNIQUE 검증을 계속 수행한다.
+
+PDF의 전체 채팅은 WebSocket/SSE 장기 연결 대신 2초마다 새 메시지만 가져오는 인증 HTTP polling으로 구현했다. 즉 새로고침 없이 갱신되지만 엄밀한 즉시 전달이 아니라 최대 약 2초 지연의 **near-real-time**이다. 현재 동기식 Django에 channel layer·연결 coordinator를 추가하지 않고 기존 세션, CSRF, cache rate limit, 보안 헤더를 재사용해 검증 가능한 범위를 유지하기 위해서다. cursor는 서명하고 응답은 최대 100건, 초기 50건이며 사용자별 조회 분당 40회·송신 10회, 본문 1,000자로 제한한다. 브라우저는 hidden tab에서 polling을 멈추고 오류 시 backoff하며 이전 요청과 겹치지 않고 DOM 메시지를 200개 이하로 유지한다. JSON의 사용자 입력은 `innerHTML`이 아니라 `textContent`로 새 노드에 넣는다. 차단 관계는 양방향으로 숨기고 정지·비활성 발신자 메시지도 조회하지 않는다. trade-off는 사용자 수에 비례한 polling 부하다.
 
 사용자 신고와 차단은 순차 사용자 ID를 신뢰하지 않고, 사용자가 실제 참여한 대화에서 상대방을 서버가 계산한다. 상품 신고는 현재 공개 가능한 상품 문맥에서만 허용한다. 신고 대상은 사용자·상품 중 정확히 하나여야 하며 중복·일일 생성도 제한한다.
 
@@ -401,11 +414,12 @@ PDF의 전체 채팅은 WebSocket/SSE 장기 연결 대신 2초마다 새 메시
 
 ### 6.7 쌍방 후기·알림·다중 사진과 하자 구현
 
-- 판매자가 1:1 대화에서 완료를 요청하면 `ACTIVE` 상품을 `RESERVED`로 두고 구매자가 확인하면 `Trade.COMPLETED`와 `Listing.SOLD`를 같은 transaction에 기록한다. 거절·취소는 시작 상태로 복구하고, 완료 거래 상품의 수정·삭제·재판매·새 대화를 서버에서 차단한다.
-- 후기의 거래·방향·작성 대상·공개 상태는 POST에서 받지 않고 로그인 사용자와 거래 참여자로 파생한다. 첫 후기는 `PENDING`, 둘째 제출 transaction에서 양쪽을 `PUBLIC`으로 바꾼다. 본문은 500자, 1~5점, 일 10회이며 전화번호·이메일·URL·긴 숫자 패턴을 거부하고 템플릿 autoescape를 유지한다.
+- 판매자가 상품에 묶인 1:1 대화에서 완료를 요청하면 필요 시 `ACTIVE` 상품을 `RESERVED`로 두고, 해당 구매자가 확인하면 `Trade.COMPLETED`와 `Listing.SOLD`를 같은 transaction에 기록한다. 판매자의 일반 상태 POST는 `ACTIVE`↔`RESERVED`만 허용한다. 거절·취소는 시작 상태로 복구하고, 완료 거래 상품의 수정·삭제·재판매·새 대화를 서버에서 차단한다.
+- 상품 전체 활성 거래가 현재 conversation과 다르면 완료·후기 CTA와 상대 신원을 숨기고, 현재 conversation의 최근 거절·취소만 기록·표시한다. 화면 은닉만 믿지 않고 service의 참여자·상태·UNIQUE 경계도 유지한다.
+- 후기의 거래·방향·작성 대상·공개 상태는 POST에서 받지 않고 로그인 사용자와 거래 참여자로 파생한다. 첫 후기는 `PENDING`, 둘째 제출 transaction에서 양쪽을 `PUBLIC`으로 바꾼다. 공개 프로필과 상품 상세의 개수·평균도 `PUBLIC`만 집계해 첫 제출 여부와 평점이 aggregate로 새지 않게 한다. 본문은 500자, 1~5점, 일 10회이며 slash 구분을 포함한 전화번호·이메일·URL·긴 숫자 패턴을 거부하고 템플릿 autoescape를 유지한다.
 - 저장 검색은 NFKC·공백·casefold 뒤 fingerprint로 중복을 막고 계정당 20개로 제한한다. 새 상품과 잠긴 old/new 가격의 실제 인하만 이벤트로 만들며 이벤트 이전에 존재한 검색·찜만 대상으로 한다. fan-out은 commit 후 실행하고 실패한 pending 이벤트는 `process_listing_events --limit N`으로 수동 재처리할 수 있다.
-- 업로드 요청은 Pillow 처리 전 허용 field, 대표 포함 최대 5장, 합계 20MB를 검사한다. 각 파일은 5MB·12MP·JPEG/PNG/WebP·단일 프레임 확인 후 metadata 없는 JPEG로 재인코딩한다. 대표 삭제 시 첫 추가 사진을 승격하고, stale·타 상품 자식 UUID는 거부하며 SQL 실패 뒤 request-created 파일을 정리한다.
-- 하자 상태와 8개 코드는 허용목록이다. `PRESENT`에는 코드, `OTHER`에는 상세가 필요하다. 신고 시 전 사진의 순서·저장명·SHA-256과 하자 상태·코드·설명을 snapshot하고, 관리자 열람은 Report 권한·부모 관계·digest를 재검사하며 내부 저장명을 HTML에 표시하지 않는다.
+- 업로드 요청은 Pillow 처리 전 허용 field, 대표 포함 최대 5장, 합계 20MB를 검사한다. preflight 실패 파일은 폼에 재결합·디코딩하지 않고 텍스트만 유지하며 재선택을 안내한다. 각 파일은 5MB·12MP·JPEG/PNG/WebP·단일 프레임 확인 후 metadata 없는 JPEG로 재인코딩한다. 추가 사진 썸네일·번호·삭제 checkbox를 직접 결합하고 대표 삭제 시 첫 추가 사진 승격을 안내한다. stale·타 상품 자식 UUID는 거부하며 SQL 실패 뒤 request-created 파일을 정리한다. hidden revision과 잠근 최신 `updated_at` 불일치는 409로 전체 저장을 멈춘다.
+- 하자 상태와 8개 코드는 허용목록이다. `PRESENT`일 때만 체크리스트·상세를 화면에 표시·활성화하고 `OTHER` 상세를 native required로 안내한다. 비-`PRESENT` 변경 시 브라우저 입력을 비활성화·초기화하지만 이를 보안 경계로 신뢰하지 않는다. 서버는 `PRESENT` 코드 필수·비-`PRESENT` code 거부·허용목록을 독립 검증하고 정상 비-`PRESENT`의 stale 상세는 빈 값으로 정규화한다. 상품·메시지·후기 폼은 공통 오류 요약·입력 링크·요약 포커스, native validation과 유효 제출의 `aria-busy`·disabled·진행 문구를 사용한다. 신고 시 전 사진의 순서·저장명·SHA-256과 하자 상태·코드·설명을 snapshot하고, 관리자 열람은 Report 권한·부모 관계·digest를 재검사하며 내부 저장명을 HTML에 표시하지 않는다.
 
 ---
 
@@ -519,8 +533,11 @@ SEC-031·032는 과거 120개 통과로 종결하지 않았다. 원인별 회귀
 - 대화는 참여자 접근통제만 하며 종단간 암호화가 아니다.
 - 관리자 MFA, 관리 네트워크 제한, 중앙 SIEM·경보는 포함되지 않았다.
 - 3인 신고 임계치는 임시 차단·정지만 수행하며 금지 상품·사기·정품 여부는 관리자 검토에 의존한다. 신고 공모·오탐의 정식 이의제기와 계정 복구 SLA가 필요하다.
-- 전체 채팅은 2초 polling이라 규모가 커지면 요청·DB 부하가 증가하며, 메시지·신고 증거 보존·파기 기간도 아직 운영 정책으로 확정되지 않았다.
+- 서로 다른 신고자 3명은 한 계정의 중복은 막지만 공격자가 만든 세 계정의 Sybil/공모까지 판별하지 못한다. 계정 신뢰도·단계적 제재·공모 탐지와 이의제기 SLA가 필요하다.
+- 전체 채팅은 2초 polling이라 규모가 커지면 요청·DB 부하가 증가한다. 또한 현재 신고 route는 상품별 1:1 대화 상대를 근거로 하므로 전체 채팅의 특정 메시지에 증거를 묶는 신고 경계가 없다. 메시지 IDOR를 막는 메시지별 신고·snapshot과 보존·파기 기간이 필요하다.
 - SQLite의 행 잠금은 실효성이 없어 저장 검색 quota와 거래 상태 경합은 PostgreSQL에서 다시 검증해야 한다. 알림 fan-out은 commit 후에도 웹 프로세스에서 동기 선형 탐색하며 수동 재처리는 자동 worker·backoff를 대체하지 않는다.
+- 가격 하락 알림은 `(recipient,event)` 중복은 막지만 가격을 반복 인상·인하하면 새 이벤트가 계속 생길 수 있다. 최소 하락폭·cooldown·시간창 묶음 알림이 필요하다.
+- 거래 완료 요청 거절·취소는 요청 전 상태를 복원하므로 최초 `RESERVED` 상품은 계속 예약 상태로 남는다. 예약 해제 주체·만료시간·자동 해제 정책이 필요하다.
 - 후기 개인정보 패턴 검사는 보조 통제이며 우회 가능한 표현·욕설·분쟁을 모두 판별하지 못한다. 운영 신고·숨김·이의제기와 후기·알림·증거 보존/파기 정책이 필요하다.
 
 ### 9.5 세 확장 기능에서 발견하고 수정한 약점
@@ -530,8 +547,16 @@ SEC-031·032는 과거 120개 통과로 종결하지 않았다. 원인별 회귀
 | SEC-034~036 | 판매자 단독 `SOLD`, 완료 상품 직접 mutation, 후기 방향·선공개·PII/XSS | 대화 결합 상호확인, 완료 상품 종결, 서버 파생 방향·blind 공개·PII 패턴·autoescape | Fixed/Mitigated |
 | SEC-037~038 | 알림 IDOR·비공개 가격 노출·소급/중복·rollback 유령·fan-out 부하 | 수신자 scope, 현재 공개성, 구조화 event·시각 경계·UNIQUE·on-commit·batch·수동 재처리 | Fixed/Mitigated |
 | SEC-039~041 | 대표 제외 총량, stale/child IDOR, rollback orphan, 위조 하자, 추가 신고 증거·Admin 경계 누락 | 전 파일 batch 제한, 잠긴 자식 scope, 실패 cleanup, 하자 allowlist, 다중 SHA snapshot·report-scoped 검증 열람 | Fixed/Mitigated |
+| SEC-042 | `PENDING` 후기의 공개 평균·개수 조기 반영 | 공개 후기 목록·개수·평균을 모두 `Visibility.PUBLIC`로 제한 | Fixed |
+| SEC-043 | `/` 구분 전화번호가 후기 PII 패턴 우회 | 숫자 구분자 허용목록에 slash 추가, 400·미저장 회귀 | Mitigated |
+| SEC-044 | stale Listing Admin 폼이 새 차단 상태 덮어쓰기 | 잠근 최신 보호 필드 비교, 불일치 거부, 허용 필드만 복사 | Fixed |
+| SEC-045 | multipart body가 CSRF·Form 검사 전 parser·임시 저장소 자원을 소비 | CSRF 전 21MiB known-length 선차단, 누락·축소 길이의 실제 chunk 누적, 일반 400 | Mitigated |
+| SEC-046 | 하자 상태 변경 뒤 숨은 stale 상세·모순 입력과 오류·제출 피드백 부족 | `PRESENT` 조건부 활성화·초기화, `OTHER` required, 서버 독립 조합 거부·stale 정규화, 오류 요약·포커스·제출 잠금 | Fixed |
+| SEC-047 | 두 탭 상품 수정의 lost update와 상품 전체 거래·현재 대화 CTA 불일치 | hidden revision과 잠근 최신 `updated_at` 불일치 409·비저장, 다른 거래 CTA·상대 신원 비공개, 현재 대화 거절·취소 기록 | Mitigated |
 
-상세 원인·CWE·검증·잔여 위험은 `docs/04_SECURITY_FINDINGS.md`의 SEC-034~041에 기록했다.
+업로드 preflight에서 거부 파일을 bound form에 재결합·디코딩하지 않고 텍스트만 유지하며 사진 재선택을 안내한 변경, 썸네일-삭제 checkbox·번호·대표 승격 안내, 상품·메시지·후기 공통 오류 요약·포커스·native validation·submit lock은 `docs/04_SECURITY_FINDINGS.md`의 UX-001로 별도 기록했다. 이는 서버 보안 경계와 사용자가 이해하는 결과를 일치시키는 품질 통제다.
+
+상세 원인·CWE·검증·잔여 위험은 `docs/04_SECURITY_FINDINGS.md`의 SEC-034~047에 기록했다.
 
 ---
 
@@ -554,9 +579,9 @@ SEC-031·032는 과거 120개 통과로 종결하지 않았다. 원인별 회귀
 | 인가 | 타인 상품, 비참여 대화, 무권한 staff, action 직접 POST | 403/404 또는 안전한 거부, 상태 불변 |
 | 입력·표현 | SQLi·XSS·CRLF·외부 next URL·정렬값·가격 경계 | 문자열 처리·escape·허용목록, 외부 redirect 없음 |
 | CSRF·세션 | 상태 변경 GET, CSRF 누락, 로그인·로그아웃 세션 | POST 강제, 403, 로그인 회전·로그아웃 폐기 |
-| 이미지 | MIME 위장, SVG/HTML, 5MB·12MP 초과, 애니메이션, EXIF, 기존 이미지 삭제 sentinel | 업로드 거부 또는 안전한 JPEG 재인코딩, 유지·삭제·교체 시 500·증거 손실 없음 |
-| 상품 | 판매자 변조, quota/rate, 상태 전이, 관리자 차단 후 stale POST | 서버 판매자, 제한 적용, 허용 전이만, 차단 유지 |
-| 대화·전체 채팅·신고 | sender 변조, CSRF·XSS·cursor·rate, 제3자 열람, 사용자 ID 열거, 비공개 metadata, 고유 3인 임계치·보호계정·복구, 증거 변경·action 경합 | session sender, signed cursor·상한·textContent, 실제 대화 대상, placeholder, 원자 임시조치·관리자 복구, read-only snapshot·행 잠금 |
+| 이미지·하자 | MIME 위장, SVG/HTML, 5MB·12MP 초과, 애니메이션, EXIF, 6파일·20MiB 초과, 거부 파일 재결합, 삭제 대상 오선택, 기존 이미지 sentinel, 하자 상태/code 모순·stale 상세·OTHER 누락 | preflight 파일 미결합·재선택, 6파일 generic 400, client 5장/5MiB/20MiB 보조 검사와 서버 독립 제한·JPEG 재인코딩, 썸네일-삭제 결합·대표 승격, 서버 하자 조합 거부·stale 정규화 |
+| 상품 | 판매자 변조, quota/rate, 상태 전이, 관리자 차단 후 stale POST, 두 탭 lost update | 서버 판매자, 제한 적용, 허용 전이만, 차단 유지, hidden revision+잠근 `updated_at` 불일치 409·전체 비저장 |
+| 대화·전체 채팅·신고 | sender 변조, CSRF·XSS·cursor·rate, 제3자 열람, 다른 거래 CTA·상대 추론, 사용자 ID 열거, 비공개 metadata, 고유 3인 임계치·보호계정·복구, 증거 변경·action 경합 | session sender, signed cursor·상한·textContent, current/other trade 분리·상대 최소공개, 실제 대화 대상, placeholder, 원자 임시조치·관리자 복구, read-only snapshot·행 잠금 |
 | 송금·원장 | 음수·초과·잔액 부족, 중복키, 차단 사용자, update/delete | 전체 rollback, 1회 반영, 전송 거부, append-only |
 | 운영설정·오류 | DEBUG, 예외·POST 비밀값, 오류 template 실패, SECRET_KEY, hosts, HTTPS, proxy trust, Admin 노출, 익명 동적 cache | 잘못된 구성은 시작 거부, DEBUG에서도 비진단 오류·fallback, 모든 동적 응답 no-store |
 | 공급망 | hash 설치, Ruff, Bandit, pip-audit, CodeQL, secret scan | 미조치 Critical/High 0건 목표 |
@@ -565,21 +590,27 @@ SEC-031·032는 과거 120개 통과로 종결하지 않았다. 원인별 회귀
 
 ### 10.3 수정 후 표적 회귀·최종 통합 검사와 과거 스냅샷
 
-SEC-031·032와 신규 상세 기능을 직접 검증하는 8개 클래스 87개, SEC-033 첨부 widget 26개, 세 확장 기능과 추가 보안 표적 36개를 2026-07-13에 통과했다. 이어 현재 작업트리 전체 206개와 coverage·정적·공급망·deploy 검사를 완료했다. 아래 170개·120개 결과는 과거 스냅샷이며 새 최종값으로 사용하지 않는다. GitHub 원격 검사는 저장소 공개 전이라 미실행 상태다.
+SEC-031·032와 신규 상세 기능을 직접 검증하는 8개 클래스 87개, SEC-033 첨부 widget 26개, 세 확장 기능과 추가 보안 표적 36개를 2026-07-13에 통과했다. 그 시점의 전체 206개와 coverage·정적·공급망·deploy 검사도 완료했다. 이후 SEC-042~044 표적 16개와 SEC-045 표적 7개를 분리 실행했고, SEC-047까지 포함한 최신 결합 표적 **40개 / 17.697초 / system check 0건 / Ruff PASS**와 변경 후 전체 Django tests **219 / 219 / 157.165초 / system check 0건**도 통과했다. 최종 coverage 계측은 **219 / 219 / 162.533초 / 6,037 statements / 354 miss / 94%**였고 Ruff lint·46 files format, Bandit·pip-audit, Django check·deploy, migration, Node JavaScript 구문과 `git diff --check`도 모두 통과했다. 아래 206개·170개·120개 결과는 과거 스냅샷이다. GitHub 원격 검사는 저장소 공개 전이라 미실행 상태다.
 
 | 검사 | 실행 명령·범위 | 스냅샷 실제 결과 | 증적 |
 |---|---|---|---|
 | 수정 분기 표적 회귀 | 관련 8개 테스트 클래스 | **87개 통과 / 53.390초 / system check 문제 0건** | 2026-07-13 직접 실행 |
 | 첨부 widget 표적 회귀 | `ListingSecurityTests` | **26개 통과 / system check 문제 0건** | 2026-07-13 직접 실행 |
 | 확장 기능 보안 표적 | 후기·알림·다중 이미지·Admin 증거·이벤트 재처리·완료 복구 | **36개 통과 / system check 문제 0건** | 2026-07-13 직접 실행 |
-| 변경 후 전체 tests | `manage.py test --verbosity 1` | **206개 통과 / 114.641초 / system check 문제 0건** | 2026-07-13 비계측 직접 실행 |
-| 변경 후 Coverage | 전체 suite instrumentation | **206개 통과 / 115.434초 / 5,778 statements / 343 miss / 94%** | 2026-07-13 계측 직접 실행 |
-| 변경 후 check·migration·Ruff·Bandit·diff | 전체 현재 코드·가상환경 | **check 통과 / migration drift 없음 / lint·format 통과 / Bandit 0 / diff 오류 0** | 2026-07-13 직접 실행 |
+| SEC-042~044 후속 표적 | `market.test_trade_reviews` + `market.tests.ListingAdminSecurityTests` | **16개 통과 / 17.393초 / system check 문제 0건** | 2026-07-13 직접 실행 |
+| SEC-045 multipart 표적 | `config.tests.MultipartUploadLimitTests` | **7개 통과 / 0.023초 / system check 문제 0건** | 2026-07-13 직접 실행 |
+| SEC-042~047 최신 결합 표적 | 다중 이미지·multipart·Listing Admin·거래 후기 4개 class | **40개 통과 / 17.697초 / system check 문제 0건 / Ruff PASS** | preflight·사진 UI·하자 add→clear·revision 409·거래 CTA·공통 폼 피드백 포함 |
+| 변경 후 전체 Django tests | `manage.py test --verbosity 1` | **219 / 219 통과 / 157.165초 / system check 문제 0건** | 최신 전체 회귀 완료 |
+| 직전 전체 tests | `manage.py test --verbosity 1` | **206개 통과 / 114.641초 / system check 문제 0건** | 후속 보안 변경 전 기준선 |
+| 직전 Coverage | 전체 suite instrumentation | **206개 통과 / 115.434초 / 5,778 statements / 343 miss / 94%** | 후속 보안 변경 전 기준선 |
+| 직전 check·migration·Ruff·Bandit·diff | 당시 전체 코드·가상환경 | **check 통과 / migration drift 없음 / lint·format 통과 / Bandit 0 / diff 오류 0** | 후속 보안 변경 전 기준선 |
+| 변경 후 최종 Coverage | 전체 suite instrumentation | **219 / 219 통과 / 162.533초 / 6,037 statements / 354 miss / 94%** | 완료 |
+| 변경 후 정적·공급망·운영 게이트 | Ruff lint/format, Bandit, pip-audit, Django check/deploy, migration, Node syntax, diff | **Ruff PASS·46 files formatted; Bandit 0; 알려진 취약점 0; check/deploy 0; migration no changes; Node syntax·diff PASS** | 완료 |
 | 직전 pip-audit·deploy | 현재와 동일한 의존성·운영설정 | **알려진 취약점 0 / deploy 0** | 후속 UI/widget 변경은 의존성·운영설정 미변경 |
 | 과거 Django tests | `python manage.py test` | 120개 전부 통과 | 2026-07-12 보존 스냅샷; 신규 분기 미포함 |
 | 과거 Coverage | `coverage run manage.py test` / `coverage report -m` | TOTAL 3,169 statements / 223 miss / 93% | 2026-07-12 보존 스냅샷 |
 | 과거 Ruff·Bandit·pip-audit·deploy | 당시 전체 코드 | 문제 0건 | 2026-07-12 보존 스냅샷 |
-| 반응형 UI 구조 | CSS 중괄호·필수 breakpoint·외부 asset·template inline style/script·이전 실제 viewport 검사 | 현재 중괄호 987/987, 1080/900/700/470/360px 규칙, 외부 asset·inline style/script 0건; 1440px·320px overflow 0은 확장 전 브라우저 증적 | 정적 결과와 TEST-R009~012; 확장 기능의 새 시각 QA는 미수행 |
+| 반응형 UI 구조 | CSS 중괄호·필수 breakpoint·외부 asset·template inline style/script·실제 viewport 검사 | 현재 중괄호 1112/1112, 1080/900/700/470/360px 규칙, 외부 asset 미추가; 최종 웜톤 1440×1000·320×800 overflow 0과 주요 조작 44px 이상 | TEST-R009~013; 하자 오류 UI의 키보드·스크린리더·200% 확대는 미수행 |
 | Runtime hash 설치 | `pip install --require-hashes -r requirements.lock` | 빈 대상 설치 성공 | 로컬 설치 결과 |
 | Dev hash 설치 | `pip install --require-hashes -r requirements-dev.lock` | 빈 대상 설치 성공 | 로컬 설치 결과 |
 | 시크릿·금지 패턴 | 현재 파일+Git 이력, 위험 API·template escape 우회 검색 | 일치 0건 | 로컬 검색 결과 |
@@ -591,11 +622,11 @@ SEC-031·032와 신규 상세 기능을 직접 검증하는 8개 클래스 87개
 
 감청색 UI 적용 후 1440×1000에서 흰색 sticky header, blue gradient hero, 4열 상품 Grid, 카드 radius 20px와 shadow, 문서 가로 overflow 0을 다시 실측했다. 모바일 재접속은 브라우저 도구의 로컬 URL 보안 정책에 막혀 우회하지 않았고, 대신 1080/900/700/470/360px cascade를 독립 감사했다. 이 감사에서 901px 인증 header 경계, 35~40px 주요 보조 컨트롤, 긴 사용자 입력과 회원 nav overflow, sticky anchor 가림 가능성을 찾아 1080px 재선언, 주요 컨트롤 최소 44px target, `overflow-wrap`, 내부 nav scroll·fade, `scroll-margin-top`으로 수정했다. 실제 320px·200% 확대와 스크린리더 QA는 완료로 과장하지 않고 릴리스 전 항목으로 유지한다.
 
-2026-07-13 모노크롬 전환 뒤 브라우저에서 1440×1000 홈의 검정 hero·4열 Grid·가로 overflow 0과 320×800 홈의 1열 Grid·sticky header·44px primary button·가로 overflow 0을 확인했다. 로그인과 안전 가이드도 1440px에서 overflow 0, 외부 asset 0이었고 당시 상품 이미지 computed `filter`는 `none`이었다. 후속으로 첨부 영역의 저채도 세이지 스타일과 보호 widget, 다중 사진·하자·후기·알림 화면을 추가한 뒤에는 새 브라우저 시각 QA를 수행했다고 주장하지 않는다. 현재 CSS 중괄호 987/987와 scoped selector는 정적으로 확인했고, 실제 색 대비·키보드 focus·200% 확대와 확장 화면 시각 인수는 최종 사용자 확인 대상으로 남겼다.
+2026-07-13 모노크롬 전환 뒤 브라우저에서 1440×1000 홈의 4열 Grid·가로 overflow 0과 320×800 홈의 1열 Grid·sticky header·44px primary button·가로 overflow 0을 확인했다. 이는 현재 팔레트 이전의 역사적 UI 증적이다.
 
 2026-07-13 사용자 QA에서는 기존 이미지 삭제 선택 시 SEC-031 500을 재현했다. DEBUG true 응답은 약 91KB의 기술 화면으로 예외명과 traceback을 포함했고, DEBUG false의 동일 500은 일반 오류 화면이었다. 이후 이미지 field 정규화와 DEBUG-safe 오류 middleware·standalone fallback을 구현하고 표적 회귀로 수정 분기를 확인했다. 이어 실제 브라우저에서 이미지가 있는 임시 상품의 `비우기` 저장이 상세 placeholder로 이어지고 DB image 값과 기존 파일이 제거되며 오류가 없음을 확인했다. DEBUG true의 미등록 URL도 일반 404만 표시해 URL pattern·Django 버전·traceback을 노출하지 않았다. QA 사용자·상품·파일은 확인 후 삭제했다.
 
-최종 보안 감사 후 변경된 일반·Admin 로그인 제한, 성공 시 account-only clear, 제한 staff의 forged POST 거부, rate limit 시 이미지 decoder 미호출, 차단 상품 metadata 비공개는 자동 회귀로 재검증했다. 320×800의 마이페이지·전체 채팅·내 상품은 문서 overflow 0과 주요 버튼 44px 이상을 확인했다. 200% 확대, 실제 키보드·스크린리더·색 대비 수동 QA는 PDF 제출 전 확인 대상으로 남는다.
+최종 웜톤 cascade 적용 뒤 1440×1000 데스크톱과 320×800 모바일 브라우저에서 문서 가로 overflow가 모두 0이고 주요 조작이 44px 이상임을 확인했다. 상품 사진은 원색이며 외부 asset을 추가하지 않았다. 이 검사는 레이아웃·터치 크기의 브라우저 spot-check이고, 판매자·구매자 두 세션의 후기·알림·다중 이미지 전체 사용자 흐름을 대신하지 않는다. 200% 확대, 실제 키보드·스크린리더와 확장 기능 전체 UAT는 PDF 제출 전 확인 대상으로 남는다.
 
 ---
 
@@ -689,7 +720,8 @@ OpenAI Codex와 병렬 검토 에이전트를 요구사항 분석, 공식 자료
 | UI 재설계 | 감청색 토큰·Grid/Flex override와 경계 폭 감사 | AI가 cascade·한글/사용자 입력 폭·실제 접근성을 오판할 수 있음 | 1440×1000 실측, 독립 정적 감사, 전체 회귀와 제출 전 실제 모바일 QA |
 | 모노크롬 전환·요구 재대조 | 검정·흰색 토큰, 기존 hard-coded 색상 감사, PDF 25~29페이지 14개 시스템 기능표 | 전역 grayscale의 상품 사진 왜곡, 흑백 focus 소실, 대기능표가 상세 누락을 숨길 수 있음 | 원색 상품 사진, 이중 focus ring, 1440·320px 실측, 5페이지 원문·코드·67 tests 대조 |
 | 상세 기능·보안 보강 | 프로필·마이페이지·내 상품·전체 채팅·3인 신고 임계치, SEC-031·032 수정안과 회귀 | 범용 User 변경은 권한을 노출하고 WebSocket/SSE·영구 자동삭제는 검증범위·DoS를 키우며 예외 문자열 로그는 정보노출 가능 | 최소 field allowlist·Django PasswordChangeForm, 제한된 2초 polling, 고유 OPEN 3인 임시조치·복구, SafeExceptionMiddleware·fallback을 코드 대조하고 87개 표적 테스트 직접 실행 |
-| 첨부 UI·위치 기능 검토 | 기본 file widget 정보노출 감사, scoped 세이지 스타일, 지도 제공자·GPS/ETA 아키텍처 비교 | 색의 의학적 효능을 단정하거나 API 소개만으로 정확한 위치 공유의 안전성·구현 가능성을 오판할 수 있음 | 보호 widget HTML과 서버 이미지 검증을 26개 표적·당시 170개 전체 회귀로 확인하고 후속 최신 전체 206개에서도 회귀 통과; TMAP·Kakao Mobility·NAVER·ODsay·W3C 공식 문서 대조; 정확한 상호 GPS는 거절하고 key·quota·약관·동의·보존·법률 검토 전 ETA 구현 보류 |
+| 첨부 UI·위치 기능 검토 | 기본 file widget 정보노출 감사, scoped 세이지 스타일, 지도 제공자·GPS/ETA 아키텍처 비교 | 색의 의학적 효능을 단정하거나 API 소개만으로 정확한 위치 공유의 안전성·구현 가능성을 오판할 수 있음 | 보호 widget HTML과 서버 이미지 검증을 26개 표적·당시 170개·직전 206개 전체 회귀로 확인; TMAP·Kakao Mobility·NAVER·ODsay·W3C 공식 문서 대조; 정확한 상호 GPS는 거절하고 key·quota·약관·동의·보존·법률 검토 전 ETA 구현 보류 |
+| 웜톤·후속 보안·작성·거래 UX 감사 | warm palette, 비공개 후기 aggregate·slash PII·Admin stale 저장·multipart, 조건부 하자, 거부 파일 재결합, 썸네일-삭제 오연결, 두 탭 lost update, 거래 CTA·공통 폼 피드백 공격 시나리오 점검 | 시각 결과와 표적 테스트만으로 전체 회귀·접근성·운영 동시성을 과장할 수 있음 | 1440×1000·320×800 확인, 최신 결합 40개·전체 219개·coverage 94%·정적/공급망/deploy/migration PASS; 키보드·스크린리더·200% 확대는 미완료로 분리 |
 | 보고서 | 문서 초안과 추적표 통합 | GitHub URL·원격 검사 성공을 추정할 수 있음 | 로컬 수치는 실제 결과만 기록하고 Public URL·Actions·PDF 외부 상태만 placeholder 유지 |
 
 AI 프롬프트에는 실제 비밀번호, 토큰, 세션 쿠키, 비밀키, 개인정보를 넣지 않았다. 제안된 기능이 과제 최소 요구에 없거나 보안 검증 범위를 지나치게 늘리면 채택하지 않았다. 예를 들어 React+REST+JWT, 실제 결제·외부 이미지 URL, 구현하지 않은 주문 상태 머신을 완료로 표현하는 안을 거절했다. AI가 작성한 코드는 route·model·form·template·migration을 주 에이전트가 직접 대조하고 테스트를 실제 실행했다. AI-020 단계에서 추정하지 않았던 전체 coverage는 이후 최종 통합 검사로 직접 측정했으며, 여전히 실행하지 않은 GitHub·외부 배포·PDF 결과만 성공으로 추정하지 않았다.
@@ -709,9 +741,13 @@ AI 프롬프트에는 실제 비밀번호, 토큰, 세션 쿠키, 비밀키, 개
 | Admin CSP inline 예외 | XSS 방어 강도 일부 저하 | 일반 사용자 경로는 엄격 CSP, Admin 접근 제한 | nonce/hash 기반 정적 자산화 검토 |
 | 대화 기밀성 | 서버·DB 관리자는 내용 접근 가능 | 참여자 객체 접근통제, HTTPS | 암호화 at rest, 보존기간, 필요 시 E2EE 별도 설계 |
 | 전체 채팅 polling | 최대 약 2초 지연, 사용자가 늘면 HTTP·DB 부하 증가 | signed cursor, 100건, 조회·송신 rate, hidden 중단·backoff | PostgreSQL·Redis 부하 시험, 필요 시 WebSocket/channel layer |
-| 자동 moderation 오탐·공모 | 3개 계정의 고유 신고로 임시 서비스 제한 가능 | 중복·자기 신고 제외, 보호 계정, 영구삭제 금지, 감사로그·관리자 복구 | 계정 신뢰도·공모 탐지, 이의제기·복구 SLA |
+| 자동 moderation 오탐·Sybil 공모 | 공격자가 만든 3개 계정의 고유 신고로 임시 서비스 제한 가능 | 중복·자기 신고 제외, 보호 계정, 영구삭제 금지, 감사로그·관리자 복구 | 계정 연령·신뢰도·공모 탐지, 단계적 제재, 이의제기·복구 SLA |
+| 가격 알림 반복 스팸 | 가격 인상·인하 반복마다 새 하락 이벤트 생성 가능 | 이벤트별 수신자 UNIQUE, 차단·정지 제외 | 최소 하락폭·cooldown·시간창 묶음 알림·수신 설정 |
+| 전체 채팅 신고 경계 | 특정 전체 채팅 메시지를 증거로 고정한 신고 route 없음 | 인증·출력·rate·관리자 read-only 메시지 | message ID 서버 바인딩, snapshot·IDOR·보존/파기·관리자 검토 |
+| 예약 상태 복원 | 요청 전 `RESERVED`였으면 거절·취소 뒤에도 예약 유지 | 초기 상태 snapshot과 제한된 복원 | 예약 해제 주체·만료시간·자동/수동 해제 정책 |
 | 대화·신고 보존 | 원문 장기 보관 시 개인정보·저장소 부담 | 최소 공개, 권한·read-only evidence | 메시지·신고별 보존·파기 기간과 legal hold 정책 |
 | 파일 삭제 | backup·스토리지 장애에 orphan 가능 | commit 후 삭제, no-store, 정기 점검 계획 | object lifecycle·backup 보존 정책 |
+| upstream 업로드 자원 | application 21MiB 제한 전에 reverse proxy가 큰 body·느린 연결을 수신할 수 있음 | CSRF 전 middleware·실제 chunk 누적·안전 400 | proxy body/time/connection limit과 부하 시험 |
 | 원장 직접 SQL | ORM append-only 우회 | 서비스 단일 게시 경계, reconciliation 계획 | DB 최소권한·감사 trigger/외부 원장 |
 | 실제 거래 보호 부재 | 배송·환불·사기 피해를 해결하지 않음 | DEMO POINT·교육용 경고, 금융정보 미수집 | 실제 서비스 확장 시 별도 규제·에스크로 설계 |
 | 거래 위치·ETA 미구현 | 약속장소·도착시간 자동 안내가 없음 | 정확한 GPS 상호 공개를 하지 않고 현재 geolocation·외부 connect 차단 유지 | 공공장소 약속부터 구현 후 명시적 동의·최소보존·법률·TMAP key/quota/약관 검토 |
@@ -743,7 +779,7 @@ README에는 Python 3.12 가상환경 생성, hash-locked 개발 의존성 설�
 - `[최종 확인 필요]` 비밀값·DB·업로드 없이 clone 가능
 - `[완료]` README와 `docs/00~12` strict UTF-8 decode 오류 0건, 로컬 Markdown 링크 오류 0건, stale 완료 표현·의존성 파일명·조치 권한 표현 점검
 
-남은 작업에는 clean clone README 재현, 실제 키보드/스크린리더·200% 확대와 확장 기능 브라우저 인수, 외부·개인 증적인 반·이름·전화번호, Public GitHub URL·SHA·tag, 원격 Actions/CodeQL, 외부 배포 선택 여부, 최종 PDF 캡처·렌더링이 포함된다. SEC-031~041과 전체 영향은 현재 206개·94%·정적/공급망/deploy 검사로 확인했다. 과거 120개·93%, 168개·94%, 170개·94%는 시점별 스냅샷으로만 보존한다.
+남은 작업에는 clean clone README 재현, 실제 키보드/스크린리더·200% 확대와 확장 기능 브라우저 인수, 외부·개인 증적인 반·이름·전화번호, Public GitHub URL·SHA·tag, 원격 Actions/CodeQL, 외부 배포 선택 여부, 최종 PDF 캡처·렌더링이 포함된다. 로컬 최종 게이트는 전체 **219 / 219**, coverage **6,037 statements / 354 miss / 94%**, Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff PASS다. 과거 120개·93%, 168개·94%, 170개·94%, 206개·94%는 시점별 스냅샷으로만 보존한다.
 
 ### 15.3 공개 전 검사
 
@@ -770,9 +806,9 @@ README에는 Python 3.12 가상환경 생성, hash-locked 개발 의존성 설�
 
 TINY MARKET은 과제의 7개 필수 기능을 하나의 Django 애플리케이션으로 연결하면서, 중고거래에서 반복되는 수평 권한상승, 대상·발신자 변조, 저장형 XSS, 위험 파일, 신고 악용, 관리자 권한 오용, 이중 지출과 공급망 위험을 설계 단계부터 다뤘다. 당근의 낮은 사용 마찰과 번개장터의 전국 검색·거래 추적 장점을 가져오되, 실제로 제공하지 않는 위치 인증·안전결제·정품 보증을 과장하지 않았다.
 
-개발 중 발견한 문제는 숨기지 않고 왜 위험했는지, 어떤 신뢰경계를 잘못 두었는지, 코드·DB·권한·테스트를 어떻게 바꿨는지 기록했다. 특히 최종 감사에서 제한 staff의 계정 권한상승, Admin 사전 인증 상태 혼동, 비밀번호 해시 중 DB lock, 신고 증거와 Admin 업로드 우회까지 추가로 찾아 수정했다.
+개발 중 발견한 문제는 숨기지 않고 왜 위험했는지, 어떤 신뢰경계를 잘못 두었는지, 코드·DB·권한·테스트를 어떻게 바꿨는지 기록했다. 특히 최종 감사에서 제한 staff의 계정 권한상승, Admin 사전 인증 상태 혼동, 비밀번호 해시 중 DB lock, 신고 증거와 Admin 업로드 우회에 이어 비공개 후기 aggregate 노출, slash PII 우회, Admin stale 차단 덮어쓰기, multipart 파싱 전 자원고갈, 하자 조건부 입력의 stale·모순, 거부 파일 재결합, 두 탭 상품 lost update와 거래 상태·CTA 불일치까지 찾아 수정·완화했다.
 
-최종 결론은 자동검사 숫자 하나가 아니라 요구사항→설계→구현→공격 테스트→수정→잔여위험→유지보수의 추적성이다. 사용자 QA의 SEC-031·032, UI 감사의 SEC-033, 확장 기능의 SEC-034~041을 수정·완화했고 관련 표적 36개, 비계측 전체 **206개/114.641초**, coverage **5,778 statements/94%**, 정적·공급망·deploy 검사와 앞선 실제 브라우저 보안 흐름이 통과했다. 정확한 상호 GPS는 위치 프라이버시 위험 때문에 구현하지 않고 공공장소 약속·개별 경로·ETA 범위 설계로 제한했다. 그러나 Public GitHub, 원격 Actions/CodeQL, 이번 확장 기능의 실제 브라우저·키보드·스크린리더 인수, 최종 PDF를 완료하기 전에는 제출본으로 확정하지 않는다. URL, SHA, 개인정보와 외부 증적을 입력하고 사용자 인수 체크리스트까지 완료한 뒤 최종 PDF로 확정한다.
+결론은 자동검사 숫자 하나가 아니라 요구사항→설계→구현→공격 테스트→수정→잔여위험→유지보수의 추적성이다. 사용자 QA의 SEC-031·032, UI 감사의 SEC-033, 확장 기능의 SEC-034~041과 후속 SEC-042~047을 수정·완화했다. 최종 로컬 게이트는 비계측 **219개/157.165초**, coverage **219개/162.533초·6,037 statements/354 miss/94%**, Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff PASS다. 최종 웜톤 화면은 1440×1000·320×800에서 overflow 0과 주요 조작 44px 이상을 확인했다. revision 누락 호환과 SQLite 동시성은 운영 전 보강해야 한다. 정확한 상호 GPS는 위치 프라이버시 위험 때문에 구현하지 않고 공공장소 약속·개별 경로·ETA 범위 설계로 제한했다. Public GitHub, clean clone, 원격 Actions/CodeQL, 확장 기능 전체 브라우저·키보드·스크린리더·200% 확대 인수, 최종 PDF·지정 파일명·LMS 제출을 완료하기 전에는 제출본으로 확정하지 않는다.
 
 ---
 
@@ -780,16 +816,16 @@ TINY MARKET은 과제의 7개 필수 기능을 하나의 Django 애플리케이�
 
 | 요구사항 | 주요 구현 | 주요 보안 증적 | 현재 판정 |
 |---|---|---|---|
-| REQ-F001 가입·인증 | `accounts` User/Form/view/LoginAttempt·공개 프로필·마이페이지 | Mass Assignment, 공개 allowlist·XSS, 약한/현재 비밀번호, account 5/network 30, 변경 10/hour, oversized, session hash | 신규 프로필·마이페이지 표적 및 전체 206개 회귀 통과 |
-| REQ-F002 상품 | Listing/Form/view/내 상품/private image | IDOR, 가격·상태, stale update, 이미지 위장·증거보존·Admin sanitizer, SEC-031 sentinel·SEC-033 저장명 비노출 | 삭제·유지·교체·보호 widget 표적, 전체 회귀와 앞선 실제 브라우저 삭제 통과 |
+| REQ-F001 가입·인증 | `accounts` User/Form/view/LoginAttempt·공개 프로필·마이페이지 | Mass Assignment, 공개 allowlist·XSS, 약한/현재 비밀번호, account 5/network 30, 변경 10/hour, oversized, session hash | 신규 프로필·마이페이지 표적 및 직전 전체 206개 회귀 통과 |
+| REQ-F002 상품 | Listing/Form/view/내 상품/private image·multipart middleware·조건부 하자 UI | IDOR, 가격·상태, 21MiB pre-parser, 거부 파일 미결합·6파일 generic 400, 썸네일-삭제·대표 승격, revision stale 409, 이미지 위장·증거보존·Admin sanitizer, SEC-031·033·045~047 | 최신 결합 표적 40개, 삭제·유지·교체·보호 widget 표적, 직전 전체 회귀와 실제 브라우저 삭제 통과 |
 | REQ-F003 소통 | Conversation/Message·GlobalChatMessage·polling API | 참여자·session sender, CSRF·XSS·signed cursor·rate, 차단, pagination·N+1, 비공개 metadata | 전체 채팅·Admin 표적 회귀 통과; scale QA 대기 |
 | REQ-F004 차단·신고 | UserBlock/Report/moderation service/Admin | 대상 열거 거부, 고유 OPEN 3인 원자 집계, 보호 계정·임시조치·복구, snapshot/SHA/read-only evidence | 자동조치·복구 표적 회귀 통과; 이의제기 운영정책 필요 |
 | REQ-F005 송금 | Wallet/Transfer/Ledger service | 조건부 debit, rollback, 멱등, 이중 원장, append-only | 2026-07-12 스냅샷 통과 |
 | REQ-F006 검색 | home ORM query/filter/sort/page | SQLi 문자열, 허용목록, 길이, 비공개 제외 | 2026-07-12 스냅샷 통과 |
-| REQ-F007 관리자 | Django Admin·전용 login | `suspend_user`·`block_listing`·`delete_listing`+`purge_listing`, read-only evidence, Admin 기본 비활성 | 2026-07-12 스냅샷 통과 |
-| REQ-E001 상호확인 후기 | `Trade`·`Review`·공개 프로필 | 대화 참여자, server direction, blind 공개, PII·XSS, 완료 상품 종결 | 표적 9개+복구 1개와 전체 206개 통과 |
-| REQ-E002 관심·가격 알림 | `SavedSearch`·`ListingEvent`·`Notification` | owner IDOR, 시각 경계, 중복, 비공개 metadata, retry | 표적 12개+명령 1개와 전체 206개 통과 |
-| REQ-E003 다중 사진·하자 | `ListingImage`·`ListingDefect`·`ReportImageEvidence` | 5장·20MB, child IDOR, orphan, allowlist, SHA 증거 | 표적 12개+Admin 1개와 전체 206개 통과 |
+| REQ-F007 관리자 | Django Admin·전용 login | 전용 action 권한, read-only evidence, Admin 기본 비활성, 최신 보호 상태 재검사 | 기존 회귀와 SEC-044 포함 Admin 표적 7개 통과 |
+| REQ-E001 상호확인 후기 | `Trade`·`Review`·공개 프로필 | 상품별 대화 참여자, current/other trade 분리·상대 최소공개, server direction, blind 공개와 `PUBLIC` aggregate, slash PII·XSS, 완료 상품 종결 | 최신 결합 표적의 거래 상태·CTA 분기와 최종 전체 219개 통과 |
+| REQ-E002 관심·가격 알림 | `SavedSearch`·`ListingEvent`·`Notification` | owner IDOR, 시각 경계, 중복, 비공개 metadata, retry | 표적 12개+명령 1개와 직전 전체 206개 통과 |
+| REQ-E003 다중 사진·하자 | `ListingImage`·`ListingDefect`·`ReportImageEvidence`·`listing_form.js` | client 5장·5MiB/장·20MiB, preflight 파일 미결합, child IDOR, orphan, 썸네일-삭제 결합·대표 승격, revision 409, 조건부 UI+서버 allowlist·stale 상세 정규화, 공통 오류·제출 잠금, SHA 증거 | 최신 결합 40개에서 add→clear·두 탭 conflict 포함, 최종 전체 219개·coverage 94% 통과 |
 
 ## 부록 B. 최종 검증 명령
 

@@ -123,6 +123,11 @@ class TradeReviewSecurityTests(TestCase):
         self.assertEqual(rejected_trade.status, Trade.Status.REJECTED)
         self.assertIsNotNone(rejected_trade.closed_at)
         self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.client.force_login(self.seller)
+        rejected_page = self.client.get(
+            reverse("market:conversation_detail", args=[self.conversation.pk])
+        )
+        self.assertContains(rejected_page, "이전 완료 요청을 거절했습니다")
 
         reserved_listing, reserved_conversation = self._make_market_pair(
             "reserved",
@@ -140,6 +145,59 @@ class TradeReviewSecurityTests(TestCase):
         self.assertEqual(cancelled_trade.status, Trade.Status.CANCELLED)
         self.assertIsNotNone(cancelled_trade.closed_at)
         self.assertEqual(reserved_listing.status, Listing.Status.RESERVED)
+        cancelled_page = self.client.get(
+            reverse("market:conversation_detail", args=[reserved_conversation.pk])
+        )
+        self.assertContains(cancelled_page, "이전 완료 요청을 취소했습니다")
+
+    def test_other_buyer_conversation_hides_invalid_trade_call_to_action(self):
+        second_buyer = get_user_model().objects.create_user(
+            username="trade-second-buyer",
+            password=PASSWORD,
+        )
+        second_conversation = Conversation.objects.create(
+            listing=self.listing,
+            buyer=second_buyer,
+            seller=self.seller,
+        )
+        self._request_trade()
+        self.client.force_login(self.seller)
+
+        response = self.client.get(
+            reverse("market:conversation_detail", args=[second_conversation.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "다른 거래 완료 확인이 진행 중")
+        self.assertNotContains(response, "이 구매자에게 거래 완료 확인 요청")
+        self.assertNotContains(response, self.buyer.username)
+
+    def test_message_and_review_errors_have_visible_summary(self):
+        self.client.force_login(self.buyer)
+        message_response = self.client.post(
+            reverse("market:conversation_detail", args=[self.conversation.pk]),
+            {"body": ""},
+        )
+
+        self.assertEqual(message_response.status_code, 200)
+        self.assertContains(message_response, "저장되지 않았습니다")
+        self.assertContains(message_response, "data-form-error-summary", html=False)
+
+        trade = self._complete_trade()
+        self.client.force_login(self.buyer)
+        review_response = self.client.post(
+            reverse("market:review_create", args=[trade.pk]),
+            {"rating": "", "body": ""},
+        )
+
+        self.assertEqual(review_response.status_code, 400)
+        self.assertContains(review_response, "저장되지 않았습니다", status_code=400)
+        self.assertContains(
+            review_response,
+            "data-form-error-summary",
+            status_code=400,
+            html=False,
+        )
 
     def test_third_party_cannot_enumerate_or_mutate_trade_and_review(self):
         self.client.force_login(self.outsider)
@@ -289,6 +347,9 @@ class TradeReviewSecurityTests(TestCase):
         )
         self.assertNotContains(seller_profile, buyer_body)
         self.assertEqual(seller_profile.context["review_count"], 0)
+        listing_detail = self.client.get(reverse("market:listing_detail", args=[self.listing.pk]))
+        self.assertIsNone(listing_detail.context["seller_average_rating"])
+        self.assertNotContains(listing_detail, "평균 5.0점")
 
         seller_body = "약속 시간을 잘 지킨 구매자였습니다."
         second = self._post_review(
@@ -326,6 +387,7 @@ class TradeReviewSecurityTests(TestCase):
         trade = self._complete_trade()
         private_bodies = (
             "연락처는 010-1234-5678입니다.",
+            "다른 연락처는 010/1234/5678입니다.",
             "이메일은 reviewer@example.com 입니다.",
             "자세한 내용은 https://example.com 에 있습니다.",
             "계좌번호는 1234567890123 입니다.",

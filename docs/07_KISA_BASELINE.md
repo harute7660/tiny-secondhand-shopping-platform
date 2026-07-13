@@ -7,7 +7,7 @@
 - 구현단계 기준: 7개 영역, 49개 보안약점
 - Python 가이드 상세 설명 제외 3개: 메모리 버퍼 오버플로우, 해제된 자원 사용, 초기화되지 않은 변수 사용
 
-`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. 2026-07-13 발견한 SEC-031~041을 수정·완화하고 세 확장 기능까지 포함해 전체 206개, coverage 94%, 정적·공급망·deploy 검사를 통과했다.
+`A`는 현재 구현에 적용할 통제, `N/A`는 기능·언어상 미적용이다. PDF 35페이지와 25~29페이지의 기능을 확정했으므로 보류 판정은 남기지 않았다. N/A도 금지 API 검색과 아키텍처 검토로 기능 부재를 검증하며, 기능이 추가되면 즉시 A로 재분류한다. SEC-042~047 최신 결합 표적 40개가 17.697초에 system check 0건으로 통과했다. 최종 전체 Django tests는 219 / 219 / 157.165초, Coverage는 219 / 219 / 162.533초·6,037 statements / 354 miss / 94%이며 Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff도 모두 통과했다. 206개·170개 등 이전 수치는 역사적 스냅샷으로만 보존한다.
 
 ## 1. 입력데이터 검증 및 표현 - 17개
 
@@ -27,7 +27,7 @@
 | 12 | 서버사이드 요청 위조 | N/A | 사용자 URL 서버 호출 기능 없음 | HTTP 호출 데이터 흐름 검색 |
 | 13 | HTTP 응답분할 | A | 헤더 고정, CR/LF 거부 | `%0d%0a` 테스트 |
 | 14 | 정수형 오버플로우 | A | 가격·페이지·크기·가입·상품·소개글·채팅·신고 상한, DB 제약 | 경계값·quota/rate 테스트 |
-| 15 | 보안기능 결정의 부적절한 입력값 | A | 사용자·발신자는 세션, 신고·차단 대상은 참여 대화, 프로필 필드 allowlist, Admin은 대상 모델 권한 재검사 | Mass Assignment·sender 위조·열거·forged Admin POST 테스트 |
+| 15 | 보안기능 결정의 부적절한 입력값 | A | 사용자·발신자는 세션, 신고·차단 대상은 참여 대화, 프로필 필드 allowlist, 하자 상태/code는 서버 allowlist·조합 검증과 stale 상세 정규화, Admin은 대상 모델 권한 재검사 | Mass Assignment·sender 위조·열거·하자 forged 조합·add→clear·forged Admin POST 테스트 |
 | 16 | 메모리 버퍼 오버플로우 | N/A | 자체 C 확장 없음 | FFI·바이너리 확장 검색 |
 | 17 | 포맷 스트링 삽입 | A | 포맷 문자열은 코드 상수, 입력은 값 인자 | 사용자 제어 format 검색 |
 
@@ -103,10 +103,14 @@
 | 이미지 첨부 UI 직접 분기 | `ListingSecurityTests` **26개 통과 / 18.104초** | 저채도 세이지 범위, MIME accept/help, guarded 현재 이미지 URL, 내부 저장명·`MEDIA_URL` 비노출, 모바일 CSS |
 | Django system check | 문제 0건 | 설정·모델 기본 일관성 |
 | 확장 기능 직접 분기 | **36개 통과** | 상호확인 후기·알림·다중 이미지·하자·증거·재처리·완료 거래 복구 |
-| 변경 후 전체 suite | **206개 통과 / 114.641초 / system check 문제 0건** | SEC-031~041과 세 확장 기능을 포함한 최종 회귀 |
-| 변경 후 Coverage | 계측 실행 **206개 / 115.434초**, **5,778 statements / 343 miss / 94%** | 현재 애플리케이션 전체 계측 |
-| 변경 후 정적·공급망·deploy | **Ruff lint 통과·46개 파일 format 일치, Bandit 0건, pip-audit 0건, deploy check 0건** | 현재 코드와 가상환경 최종 품질 게이트 |
-| 구조·migration·CSS | **Django check 0건, migration 변경 없음, CSS 중괄호 987/987** | 설정·모델·스타일 정적 일관성 |
+| 직전 전체 suite | **206개 통과 / 114.641초 / system check 문제 0건** | SEC-031~041과 세 확장 기능 포함; 후속 변경 전 기준선 |
+| 직전 Coverage | 계측 실행 **206개 / 115.434초**, **5,778 statements / 343 miss / 94%** | 후속 변경 전 전체 계측 |
+| SEC-042~044 직접 분기 | **16개 통과 / 17.393초 / system check 문제 0건** | 공개 후기 visibility 집계, slash PII 입력검증, Admin stale 상태 경합 |
+| SEC-045 직접 분기 | `MultipartUploadLimitTests` **7개 통과 / 0.023초** | CSRF 전 요청 크기, 실제 chunk 누적, 시스템 자원 접근·안전 오류 응답 |
+| SEC-042~047 최신 결합 직접 분기 | **40개 통과 / 17.697초 / system check 문제 0건** | 후기 공개·PII, Admin stale, multipart 자원, 하자 조건부 UI·서버 모순 거부·stale 정규화, 거래 CTA 정합성 |
+| 변경 후 전체 suite·Coverage | **219 / 219 / 157.165초**, 계측 **219 / 219 / 162.533초·6,037 statements / 354 miss / 94%** | 모든 보안·기능 회귀의 최종 로컬 통합 결과 |
+| 변경 후 정적·공급망·운영 | **Ruff lint 통과·46개 파일 format 일치, Bandit 0건, pip-audit 0건, Django check·deploy warning 0건, migration 변경 없음, Node syntax·diff PASS** | 코드·의존성·운영설정·스키마 일관성 최종 로컬 게이트 |
+| 현재 구조·CSS | **웜톤·하자 오류 UI CSS 중괄호 1112/1112** | 1440×1000·320×800 overflow 0, 주요 조작 44px 이상, 브라우저 console warning/error 0건 |
 
 ### 2026-07-12 SEC-031·032 발견 전 스냅샷
 
@@ -123,9 +127,9 @@
 | SHA-256 runtime lock | `requirements.lock` 생성·CI `--require-hashes` | 코드 다운로드 무결성 |
 | CI·CodeQL·Dependabot | 구성·commit SHA pin 로컬 검토 | 실제 GitHub 실행 결과는 최초 push 후 확인 |
 
-이 과거 결과는 보존용 실행 기록이다. 이후 SEC-031~041의 직접 분기와 이미지 첨부 UI, 확장 기능 표적 36개 및 전체 206개 회귀·94% coverage·Ruff·Bandit·pip-audit·deploy check로 다시 확인했다.
+이 과거 결과는 보존용 실행 기록이다. 이후 SEC-031~041의 직접 분기와 이미지 첨부 UI, 확장 기능 표적 36개를 거쳐 최종 전체 219개·94% coverage·Ruff·Bandit·pip-audit·Django check/deploy·migration·Node syntax·diff로 다시 확인했다.
 
-판매자의 상품 판매중·예약중·판매완료 전이와 stale update 방어는 구현·검증했다. 그러나 별도 주문의 구매 요청·승인·거절·취소·환불 상태 머신은 PDF 최소 요구사항이 아니며 구현되지 않았으므로 “동일 주문 동시 수락”을 검증했다고 주장하지 않는다. 실제 시간·상태 증적은 상품 row lock·허용 전이와 DEMO POINT 조건부 차감·append-only 이중 원장·멱등성 테스트로 한정한다.
+판매자의 `ACTIVE`↔`RESERVED`, 판매자 완료 요청 뒤 구매자 확인에 의한 `SOLD`, 완료 거래 후 mutation 차단과 stale update 방어는 구현·검증했다. 그러나 결제·배송·환불까지 포함한 별도 `Order` 상태 머신은 PDF 최소 요구사항이 아니며 구현되지 않았으므로 “동일 주문 동시 수락”을 검증했다고 주장하지 않는다. 실제 시간·상태 증적은 후기 자격용 `Trade`, 상품 row lock·허용 전이와 DEMO POINT 조건부 차감·append-only 이중 원장·멱등성 테스트로 한정한다.
 
 ## 설계단계 핵심 적용
 
