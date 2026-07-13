@@ -66,6 +66,7 @@ TINY MARKET은 Django 기반의 교육용 초소형 중고거래 플랫폼이다
 | 2026-07-12 | 시스템 설계 | Django 모놀리스, ERD, 권한표, 상태전이, 위협모델, KISA 적용성 판정 | 설계 결정과 선택 이유 기록 |
 | 2026-07-12 | 구현 | 계정, 상품, 이미지, 대화, 신고·차단, DEMO POINT, Admin, 보안설정 구현 | 기능별 정상·실패·인가 테스트 작성 |
 | 2026-07-12 | UI 재설계 | `#1E3A8A` 디자인 토큰, Flexbox·Grid, 반응형 header·card·button·form 구현 | 외부 UI 의존성 없이 접근성·CSP 유지 |
+| 2026-07-13 | 모노크롬 UI 전환·체크리스트 축약 | 검정·흰색·중립 회색 UI, 원색 상품 사진, PDF 필수 18개 체크리스트 | 1440×1000·320×800 실측, 현재 코드 자동검사·실제 수행본 |
 | 2026-07-12~13 | 검토·수정 | 병렬 코드리뷰, 브라우저 QA, 정적·의존성 검사, 발견 약점 수정 | 미조치 Critical/High 0건 목표 |
 | 2026-07-13 | 최종 검증 | 전체 회귀, coverage, lint, Bandit, pip-audit, deploy check, 클린 설치 | 실제 명령 결과로 최종 수치 갱신 |
 | 2026-07-13 | 릴리스·문서 | Public GitHub, README 재현, SHA/tag, 보고서 PDF 렌더링 | 로그아웃 공개 확인과 PDF 육안검수 |
@@ -187,7 +188,7 @@ flowchart LR
 | `.github` | CI, CodeQL, Dependabot | workflow와 설정 파일 |
 | `docs` | 요구사항·결정·발견 약점·AI·테스트·KISA 증적 | `docs/00~10` |
 
-UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 감청색 `#1E3A8A`를 주색으로 흰색 배경, blue gradient hero, sticky glass header, 20px radius card와 일관된 shadow를 적용했다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
+UI는 새 Tailwind 대신 기존 semantic HTML, CSS Custom Properties, Flexbox와 Grid를 사용했다. 로컬 Tailwind CLI/PostCSS는 Node 빌드·lock·CI 감사 범위를 늘리고, Play CDN은 외부 script와 CSP 예외를 요구하므로 현재 일정에는 둘 다 채택하지 않았다. 초기 감청색 설계 뒤 사용자 요청으로 현재 UI chrome을 검정·흰색·중립 회색으로 전환했다. 검정 hero·primary button, 흰색 header·card·form, 중립 border·shadow로 정보 위계를 단순화했다. 단, 상품 색상은 구매 판단 정보이므로 업로드 사진은 원색을 유지하고 오류·성공 상태색은 안전 의미 전달 범위에서 유지한다. 상품 Grid는 데스크톱 4열에서 900px 3열, 700px 2열, 470px 1열로 바뀌며 주요 form·detail·wallet·chat은 700px 이하에서 1열이 된다.
 
 ### 5.3 데이터 모델
 
@@ -510,6 +511,8 @@ N/A 예시는 XML·LDAP·전자서명·외부 TLS 요청·사용자 URL 서버 �
 
 감청색 UI 적용 후 1440×1000에서 흰색 sticky header, blue gradient hero, 4열 상품 Grid, 카드 radius 20px와 shadow, 문서 가로 overflow 0을 다시 실측했다. 모바일 재접속은 브라우저 도구의 로컬 URL 보안 정책에 막혀 우회하지 않았고, 대신 1080/900/700/470/360px cascade를 독립 감사했다. 이 감사에서 901px 인증 header 경계, 35~40px 주요 보조 컨트롤, 긴 사용자 입력과 회원 nav overflow, sticky anchor 가림 가능성을 찾아 1080px 재선언, 주요 컨트롤 최소 44px target, `overflow-wrap`, 내부 nav scroll·fade, `scroll-margin-top`으로 수정했다. 실제 320px·200% 확대와 스크린리더 QA는 완료로 과장하지 않고 릴리스 전 항목으로 유지한다.
 
+2026-07-13 모노크롬 전환 뒤 현재 브라우저에서 1440×1000 홈의 검정 hero·4열 Grid·가로 overflow 0과 320×800 홈의 1열 Grid·sticky header·44px primary button·가로 overflow 0을 확인했다. 로그인과 안전 가이드도 1440px에서 overflow 0, 외부 asset 0이었다. CSS 중괄호는 879/879이고 상품 이미지 computed `filter`는 `none`이었다. 실제 키보드 focus 이동은 브라우저 자동 제어에서 확인되지 않아 focus CSS 구현만 정적 검토하고 최종 사용자 확인 대상으로 남겼다.
+
 2026-07-13 사용자 QA에서는 기존 이미지 삭제 선택 시 SEC-031 500을 재현했다. DEBUG true 응답은 약 91KB의 기술 화면으로 예외명과 traceback을 포함했고, DEBUG false의 동일 500은 TINY MARKET 일반 오류 화면이며 `AttributeError`·`Traceback`이 없었다. DEBUG true 404는 기술 URL 화면, DEBUG false 404와 CSRF 403은 커스텀 일반 화면이었다. 이 결과는 자동 테스트가 통과해도 사용자가 실제 분기를 확인해야 함을 보여 주며, 수정 전 제출 blocker로 유지한다.
 
 최종 보안 감사 후 변경된 일반·Admin 로그인 제한, 성공 시 account-only clear, 제한 staff의 forged POST 거부, rate limit 시 이미지 decoder 미호출, 차단 상품 metadata 비공개는 자동 회귀로 재검증했다. 모바일 320px·200% 확대, 키보드·실제 스크린리더·색 대비 수동 QA는 PDF 제출 전 확인 대상으로 남는다.
@@ -586,6 +589,7 @@ OpenAI Codex와 병렬 검토 에이전트를 요구사항 분석, 공식 자료
 | 보안 감사 | Admin 권한상승, 로그인 동시성, 증거 변경, rate 순서 발견 | 제안 수정도 새 DoS·lock 문제를 만들 수 있음 | 수정안 재검토, 짧은 예약·전용 권한·사전 gate로 재설계 |
 | 자동검사 | Ruff·Bandit·pip-audit·coverage 해석 | 도구 0건이 취약점 0건을 뜻하지 않음 | 수동 위협모델·브라우저 QA·잔여위험 병행 |
 | UI 재설계 | 감청색 토큰·Grid/Flex override와 경계 폭 감사 | AI가 cascade·한글/사용자 입력 폭·실제 접근성을 오판할 수 있음 | 1440×1000 실측, 독립 정적 감사, 전체 회귀와 제출 전 실제 모바일 QA |
+| 모노크롬 전환 | 검정·흰색 토큰, 기존 hard-coded 색상 감사, 18개 핵심 체크리스트 | 전역 grayscale가 상품 사진을 왜곡하거나 흑백 focus가 배경에서 사라질 수 있음 | 원색 상품 사진, 이중 focus ring, 1440·320px·로그인·안전 페이지 실측, 자동검사 재실행 |
 | 보고서 | 문서 초안과 추적표 통합 | GitHub URL·원격 검사 성공을 추정할 수 있음 | 로컬 수치는 실제 결과만 기록하고 Public URL·Actions·PDF 외부 상태만 placeholder 유지 |
 
 AI 프롬프트에는 실제 비밀번호, 토큰, 세션 쿠키, 비밀키, 개인정보를 넣지 않았다. 제안된 기능이 과제 최소 요구에 없거나 보안 검증 범위를 지나치게 늘리면 채택하지 않았다. 예를 들어 React+REST+JWT, 실제 결제·외부 이미지 URL, 구현하지 않은 주문 상태 머신을 완료로 표현하는 안을 거절했다.

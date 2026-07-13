@@ -257,6 +257,18 @@
 - 결과: 자동검사용 `06_TEST_CHECKLIST.md`와 제출자 수동검사용 `10_USER_ACCEPTANCE_CHECKLIST.md`를 분리했고, SEC-031·032와 Public GitHub·모바일·최종 PDF를 현재 blocker로 표시했다.
 - 다음 작업: blocker 수정 후 제출자가 직접 체크하고 계정·commit SHA·일시·스크린샷·원격 URL 증적을 기록한다.
 
+## 2026-07-13 - 블랙·화이트 UI 전환과 필수 체크리스트 축약
+
+- 단계: 요구사항 변경 / UI 설계 / 구현 / 현재 코드 재검증 / 제출 점검 개선
+- 수행 작업: 사용자의 디자인 변경 요청에 따라 기존 반응형 레이아웃과 semantic HTML은 유지하고 CSS 마지막 cascade에 모노크롬 토큰·컴포넌트 override를 추가했다. 홈, 내부 hero, header, button, form, 상품 card, 로그인, 안전 가이드, footer를 검정·흰색·중립 회색으로 통일했다.
+- 이유: 색상을 줄여 상품 정보와 행동 버튼의 위계를 선명하게 만들면서, 새 프레임워크·외부 asset 없이 기존 CSP·공급망·반응형 구조를 유지하기 위해서다.
+- 안전·접근성 결정: 상품 사진까지 grayscale 처리하면 실제 색상을 오인할 수 있어 원색을 유지했다. 오류·성공 상태색도 안전 의미 전달에 필요한 범위에서 유지한다. 검정 배경에서도 보이도록 흰색 안쪽·검정 바깥쪽 focus ring을 사용하고 상태는 색뿐 아니라 기존 텍스트·테두리로 구분한다.
+- 검토한 대안: 사이트 전체 `filter: grayscale(1)`은 상품 사진을 왜곡하므로 거절했다. HTML 전면 재작성도 기능·접근성 회귀가 커서 거절하고 CSS Custom Properties와 마지막 override를 채택했다.
+- 브라우저 증적: 1440×1000 홈에서 4열 Grid·가로 overflow 0·검정 primary button·검정 hero를 확인했다. 320×800에서 1열 Grid·가로 overflow 0·sticky header·44px primary button을 확인했다. 로그인·안전 가이드도 1440px에서 overflow 0, 외부 asset 0을 확인했다. 브라우저 키보드 focus 이동은 자동 제어 세션에서 확인하지 못해 최종 수동 항목으로 남겼다.
+- 자동 증적: 현재 작업 트리에서 Django 120개 통과, Coverage 93%, system check·migration 일치, Ruff·format·Bandit·pip-audit 통과, production deploy check 문제 0건, CSS 중괄호 879/879, template inline/external asset 0건을 확인했다.
+- 체크리스트 축약: 상세 10번 문서는 유지하고 PDF 필수 요구만 A/B/E 18개로 줄인 `11_CORE_SUBMISSION_CHECKLIST.md`를 추가했다. 수행본은 성공하지 않은 항목을 FAIL/BLOCKED로 기록한다.
+- 잔여 위험: SEC-031 이미지 삭제 500, SEC-032 오류 비노출 자동 회귀, Public GitHub, 최종 PDF·LMS, 실제 키보드 focus가 남아 있다. 플랫폼명은 사용자 선택 전 변경하지 않는다.
+
 ## 후속 기록 템플릿
 
 ### YYYY-MM-DD HH:MM - 제목

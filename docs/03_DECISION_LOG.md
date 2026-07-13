@@ -67,3 +67,12 @@
 - 접근성: 키보드 focus, reduced motion, 주요 조작 컨트롤의 최소 44px 터치 영역, 1080/900/700/470/360px 경계, 긴 사용자 입력 줄바꿈을 공통 규칙으로 둔다.
 - 보안 영향: 외부 script·font·CSS CDN과 inline style을 추가하지 않아 기존 strict CSP와 공급망 경계를 유지한다.
 - 증적: `static/css/site.css`, `templates/base.html`, `docs/06_TEST_CHECKLIST.md` TEST-R009.
+
+## ADR-009 - 모노크롬 인터페이스와 상품 사진 원색 유지
+
+- 상태: 확정
+- 결정: 기존 semantic HTML·Flexbox·Grid와 보안 경계는 유지하고, UI chrome만 검정·흰색·중립 회색으로 전환한다. 상품 사진과 안전 의미의 오류·성공 상태색은 원색을 유지한다.
+- 이유: 단순한 색 체계로 정보 위계를 강화하면서 새 외부 asset·라이브러리·CSP 예외를 추가하지 않기 위해서다. 상품 사진을 흑백으로 바꾸면 구매자가 색상·상태를 오인할 수 있다.
+- 접근성: 흰색 안쪽·검정 바깥쪽 focus ring, 44px touch target, 상태 텍스트·테두리, reduced motion, 320px 무가로 overflow 원칙을 유지한다.
+- 검토한 대안: 전역 `filter: grayscale(1)`과 템플릿 전면 재작성은 각각 상품 정보 왜곡과 기능·접근성 회귀 때문에 거절했다.
+- 증적: `static/css/site.css`, `templates/base.html`, TEST-R010, 1440×1000·320×800 브라우저 실측.
