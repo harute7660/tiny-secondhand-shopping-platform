@@ -27,6 +27,29 @@
 | REQ-F006 | 상품 검색 가능 | 키워드·카테고리·상태·지역 필터와 페이지네이션 | ORM, 길이·정렬 허용목록, 차단 상품 제외 | `market.home` | SQLi 문자열 검색·차단 상품 제외 테스트 | 검증 |
 | REQ-F007 | 관리자가 모든 요소 관리 | 각 권한을 가진 staff만 해당 요소 조회·허용된 조치 가능 | 계정 5회·네트워크 30회, 전용 조치 권한, Report·Listing 행 재검사, stale purge 부활 차단, read-only 증거·원장 | Django Admin | 전용 권한·위조 POST·경합 조치·stale resurrection·증거/원장 불변 테스트 | 검증 |
 
+## PDF 25~29페이지 상세 시스템 설계 추적
+
+35페이지의 7개 대기능과 별개로, 사용자가 지정한 25~29페이지의 세부 기능·화면·DB를 14개로 중복 제거했다. 이 표의 `PASS/PARTIAL/FAIL`은 기능 존재 여부 판정이며, 위 표의 개발 단계 상태와 의미가 다르다. 29페이지의 빨간 항목은 선택이라는 범례가 없어 모두 필수로 본다.
+
+| ID | 상세 요구 | 현재 구현·증적 | 현재 판정 | 완료하려면 |
+|---|---|---|:---:|---|
+| REQ-SD01 | 가입·로그인·아이디 중복 방지 | accounts route, case-insensitive UNIQUE, password hash, 회귀 | PASS | 최종 재회귀 |
+| REQ-SD02 | 사용자 조회·프로필 | 상품 상세의 판매자 요약만 있음 | FAIL | profile route·template·소개글 조회 |
+| REQ-SD03 | 마이페이지 소개글·비밀번호 변경 | 공개 계정 수정 route·Form 없음 | FAIL | 본인 전용 update·password change와 세션 유지/회전 테스트 |
+| REQ-SD04 | 상품 등록 | Listing/Form/create와 필드·이미지 검증 회귀 | PASS | 최종 재회귀 |
+| REQ-SD05 | 내가 등록한 상품 확인·관리 | `?mine=1`, 소유자 수정·상태·soft delete | PARTIAL | UI 접근 경로와 SEC-031 이미지 삭제 수정 |
+| REQ-SD06 | 비회원 공개 상품 목록 | 공개 상태·활성 판매자 필터와 카드·상세 링크 | PASS | 최종 화면 확인 |
+| REQ-SD07 | 상품 상세 | UUID 상세, 상품·가격·사진·판매자 정보 | PASS | 최종 화면 확인 |
+| REQ-SD08 | 실시간 전체 채팅 | 모델·route·화면·실시간 전송 방식 없음 | FAIL | 전체 채팅 모델/화면과 WebSocket·SSE·polling 중 안전한 방식 |
+| REQ-SD09 | 1대1 채팅 | 상품별 Conversation/Message와 참여자 인가 회귀 | PASS | 최종 재회귀 |
+| REQ-SD10 | 사용자·상품 신고와 사유 | Report/Form/view, 서버 대상 결정, snapshot 회귀 | PASS | 최종 재회귀 |
+| REQ-SD11 | 신고 횟수 기반 상품 차단·삭제 | 관리자 수동 block/purge만 있음 | FAIL | 유일 신고자 임계치, 자동 차단, 복구·감사 정책 |
+| REQ-SD12 | 신고 횟수 기반 사용자 휴면 | 관리자 수동 suspension만 있음 | FAIL | 임계치 자동조치, 보호 계정, 이의·복구 정책 |
+| REQ-SD13 | 27페이지 필수 화면 | 홈·가입·로그인·상품·신고·1대1 대화 화면 | PARTIAL | 프로필·마이페이지·전체 채팅과 UI 접근 경로 |
+| REQ-SD14 | 28페이지 DB 구조와 기능상 추가 관계 | Listing·Report·FK·제약·password hash | PARTIAL | User 소개글과 전체 채팅 데이터 구조 |
+
+현재 집계는 **6 PASS / 3 PARTIAL / 5 FAIL**이며 상세 시스템 기능은 `NOT READY`다. 수행 증적은 `12_CORE_CHECKLIST_EXECUTED_2026-07-13.md`에 기록한다.
+
 ## 2026-07-12 검증 스냅샷
 
 이 표는 당시 실제 실행 결과를 보존한 **과거 스냅샷**이다. 2026-07-13 사용자 QA에서 기존 이미지 삭제 500과 DEBUG 기술 화면 노출 위험을 발견했으므로, SEC-031·032 수정과 신규 회귀가 끝날 때까지 최종 합격 근거로 사용하지 않는다.
