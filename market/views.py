@@ -801,32 +801,50 @@ def listing_delete(request: HttpRequest, pk) -> HttpResponse:
 def listing_status_update(request: HttpRequest, pk) -> HttpResponse:
     if not _consume_actor_limit(request.user, "listing-state", 60, 60 * 60):
         return _rate_limited("상태 변경 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
-    requested_status = request.POST.get("status", "")
+
+    # 사용자가 전송한 값이므로 아직 신뢰하지 않는다.
+    raw_status = request.POST.get("status", "")
+
     allowed_transitions = {
         Listing.Status.ACTIVE: {Listing.Status.RESERVED},
         Listing.Status.RESERVED: {Listing.Status.ACTIVE},
     }
+
     with transaction.atomic():
         listing = get_object_or_404(
             Listing.objects.select_for_update(),
             pk=pk,
             seller=request.user,
         )
-        if requested_status not in allowed_transitions.get(listing.status, set()):
+
+        # 외부 입력을 서버가 정의한 안전한 상수로 변환한다.
+        if raw_status == Listing.Status.ACTIVE:
+            new_status = Listing.Status.ACTIVE
+        elif raw_status == Listing.Status.RESERVED:
+            new_status = Listing.Status.RESERVED
+        else:
             raise PermissionDenied
+
+        if new_status not in allowed_transitions.get(listing.status, set()):
+            raise PermissionDenied
+
         if Trade.objects.filter(
             listing=listing,
             status__in=(Trade.Status.PENDING_BUYER, Trade.Status.COMPLETED),
         ).exists():
             raise PermissionDenied
-        listing.status = requested_status
+
+        listing.status = new_status
         listing.save(update_fields=("status", "updated_at"))
+
+    # 사용자 입력 대신 검증된 값만 보안 로그에 기록한다.
     security_logger.info(
         "listing_status_changed actor=%s listing=%s status=%s",
         request.user.pk,
         listing.pk,
-        requested_status,
+        new_status,
     )
+
     messages.success(request, "판매 상태가 변경되었습니다.")
     return redirect("market:listing_detail", pk=listing.pk)
 

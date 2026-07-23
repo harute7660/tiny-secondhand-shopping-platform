@@ -527,6 +527,16 @@ class ListingSecurityTests(MarketTestCase):
             self.client.post(url, {"status": Listing.Status.ACTIVE}).status_code,
             403,
         )
+        with patch("market.views.security_logger.info") as mocked_log:
+            response = self.client.post(
+                url,
+                {"status": f"{Listing.Status.RESERVED}\nforged_log=true"},
+            )
+        self.assertEqual(response.status_code, 403)
+        mocked_log.assert_not_called()
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+
         self.client.force_login(self.bob)
         self.assertEqual(
             self.client.post(url, {"status": Listing.Status.SOLD}).status_code,
