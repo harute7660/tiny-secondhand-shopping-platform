@@ -4,4 +4,4 @@ bandit==1.9.4
 coverage==7.15.0
 pip-audit==2.10.1
 pip-tools==7.5.3
-ruff==0.15.21
+ruff==0.16.8
